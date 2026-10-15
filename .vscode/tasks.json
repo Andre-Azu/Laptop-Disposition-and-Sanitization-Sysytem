@@ -1,0 +1,58 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Django makemigrations",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": ["manage.py", "makemigrations", "laptops", "--noinput"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Django migrate",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": ["manage.py", "migrate"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Django workflow tests",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": ["manage.py", "test", "laptops", "-v", "2"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Django final checks",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": ["manage.py", "check"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Django migration check",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": ["manage.py", "makemigrations", "--check", "--dry-run"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Django development server",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": ["manage.py", "runserver", "127.0.0.1:8000"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "django-server",
+        "pattern": [{"regexp": ".*", "file": 1, "message": 1}],
+        "background": {"activeOnStart": true, "beginsPattern": "^Watching for file changes", "endsPattern": "^Starting development server at"}
+      }
+    }
+  ]
+}

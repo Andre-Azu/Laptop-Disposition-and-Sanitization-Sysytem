@@ -1,91 +1,132 @@
+from datetime import date
+
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm
 
-from .models import Device, RepairEvaluation, TechnicalAssessment
+from .models import Device, OwnerSelfAssessment, RepairEvaluation, TechnicalAssessment
 
 User = get_user_model()
 
 
 class RegistrationForm(UserCreationForm):
-    role = forms.ChoiceField(choices=[(User.Role.DEVICE_MANAGER, "Device Manager"), (User.Role.IT_ADMIN, "Request IT Administrator access")])
+    role = forms.ChoiceField(choices=User.ROLE_CHOICES)
     email = forms.EmailField()
-    phone = forms.CharField(max_length=30, required=False)
 
     class Meta(UserCreationForm.Meta):
         model = User
-        fields = ("username", "first_name", "last_name", "email", "phone", "role")
+        fields = ("username", "first_name", "last_name", "email", "phone_number", "role")
 
     def save(self, commit=True):
         user = super().save(commit=False)
         user.role = self.cleaned_data["role"]
-        user.email = self.cleaned_data["email"]
-        user.phone = self.cleaned_data["phone"]
-        user.admin_approved = user.role != User.Role.IT_ADMIN
+        user.admin_approval_status = "PENDING" if user.role == "IT_ADMIN" else "APPROVED"
         if commit:
             user.save()
         return user
 
 
 class DeviceRegistrationForm(forms.ModelForm):
+    model_name = forms.ChoiceField(choices=(), required=True)
+    purchase_date = forms.DateField(
+        input_formats=["%Y-%m"],
+        widget=forms.DateInput(format="%Y-%m", attrs={"type": "month"}),
+    )
+
     class Meta:
         model = Device
-        fields = ("asset_tag", "manufacturer", "model_name", "serial_number", "processor", "ram_gb", "storage_gb", "screen_inches", "initial_purchase_value", "year_of_purchase", "refurbished", "is_public")
-        widgets = {
-            "initial_purchase_value": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
-            "year_of_purchase": forms.NumberInput(attrs={"min": "1990", "max": "2100"}),
-        }
+        fields = (
+            "device_name", "make", "model_name", "serial_number", "processor",
+            "ram_gb", "storage_info", "initial_value_kes", "purchase_date",
+        )
+        widgets = {"initial_value_kes": forms.NumberInput(attrs={"step": "0.01", "min": "0"})}
 
-    def clean_initial_purchase_value(self):
-        value = self.cleaned_data["initial_purchase_value"]
+    def __init__(self, *args, owner=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.owner = owner
+        if owner is not None:
+            self.instance.owner = owner
+        make = self.data.get(self.add_prefix("make")) or self.initial.get("make") or getattr(self.instance, "make", "")
+        self.fields["model_name"].choices = [("", "Choose a model series")] + list(dict(Device.MODEL_SERIES).get(make, ()))
+
+    def clean_device_name(self):
+        name = self.cleaned_data["device_name"].strip()
+        if self.owner and Device.objects.filter(owner=self.owner, device_name__iexact=name).exclude(pk=self.instance.pk).exists():
+            raise forms.ValidationError("You already have a device with this nickname.")
+        return name
+
+    def clean_serial_number(self):
+        serial = self.cleaned_data["serial_number"].strip()
+        duplicate = Device.objects.filter(serial_number__iexact=serial).exclude(pk=self.instance.pk).exists()
+        if duplicate:
+            raise forms.ValidationError("This serial number is already registered in the system.")
+        return serial
+
+    def clean_initial_value_kes(self):
+        value = self.cleaned_data["initial_value_kes"]
         if value <= 0:
             raise forms.ValidationError("Purchase value must be greater than zero.")
         return value
 
     def clean(self):
         cleaned = super().clean()
-        year = cleaned.get("year_of_purchase")
-        if year and year > __import__("datetime").date.today().year:
-            self.add_error("year_of_purchase", "Purchase year cannot be in the future.")
+        make = cleaned.get("make")
+        model = cleaned.get("model_name")
+        allowed_models = dict(Device.MODEL_SERIES).get(make, ())
+        if model and model not in dict(allowed_models):
+            self.add_error("model_name", "Choose a model series for the selected manufacturer.")
+        purchase_date = cleaned.get("purchase_date")
+        if purchase_date and purchase_date > date.today():
+            self.add_error("purchase_date", "Purchase month cannot be in the future.")
         return cleaned
 
 
-class TechnicalAssessmentForm(forms.ModelForm):
-    class Meta:
-        model = TechnicalAssessment
-        fields = (*TechnicalAssessment.COMPONENTS, "notes")
-        widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
-
-
-class RepairEvaluationForm(forms.ModelForm):
-    class Meta:
-        model = RepairEvaluation
-        fields = ("result", "technician_comments")
-        widgets = {"technician_comments": forms.Textarea(attrs={"rows": 3})}
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("result") == RepairEvaluation.Result.FAILED and not cleaned.get("technician_comments", "").strip():
-            self.add_error("technician_comments", "Technician comments are required when a device fails.")
-        return cleaned
-
-
-class SelfAssessmentForm(forms.Form):
-    COMPONENTS = ("boot", "keyboard", "storage", "cpu", "bluetooth", "usb", "display", "battery_health", "ram", "wifi", "camera")
-    PATHWAYS = (("sanitize", "Option A: Sanitization"), ("repair", "Option B: Repair"), ("both", "Option C: Both"))
+class OwnerSelfAssessmentForm(forms.ModelForm):
     device = forms.ModelChoiceField(queryset=Device.objects.none())
-    pathway = forms.ChoiceField(choices=PATHWAYS, widget=forms.RadioSelect)
-    backup_confirmed = forms.BooleanField(required=True, label="I have backed up my data and understand it may be permanently erased.")
+    backup_confirmed = forms.BooleanField(required=True, label="I have backed up my files and understand sanitization permanently erases stored data.")
+
+    class Meta:
+        model = OwnerSelfAssessment
+        fields = ("device", "screen_status", "keyboard_status", "battery_status", "chassis_status", "storage_status", "chosen_pathway", "notes")
+        widgets = {"screen_status": forms.RadioSelect, "keyboard_status": forms.RadioSelect, "battery_status": forms.RadioSelect, "chassis_status": forms.RadioSelect, "storage_status": forms.RadioSelect, "chosen_pathway": forms.RadioSelect, "notes": forms.Textarea(attrs={"rows": 3})}
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         if user is not None:
             self.fields["device"].queryset = Device.objects.filter(owner=user)
-        for component in self.COMPONENTS:
-            self.fields[component] = forms.IntegerField(min_value=1, max_value=10, initial=7, widget=forms.NumberInput(attrs={"type": "range", "class": "condition-slider", "min": 1, "max": 10}))
+
+
+class TechnicalAssessmentForm(forms.ModelForm):
+    class Meta:
+        model = TechnicalAssessment
+        fields = ("screen_status", "keyboard_status", "battery_status", "chassis_status", "storage_status", "notes")
+        widgets = {"screen_status": forms.RadioSelect, "keyboard_status": forms.RadioSelect, "battery_status": forms.RadioSelect, "chassis_status": forms.RadioSelect, "storage_status": forms.RadioSelect, "notes": forms.Textarea(attrs={"rows": 3})}
+
+
+class RepairEvaluationForm(forms.ModelForm):
+    COMPONENT_CHOICES = (
+        ("Screen", "Screen"),
+        ("Keyboard", "Keyboard"),
+        ("Battery", "Battery"),
+        ("Chassis", "Chassis"),
+        ("Storage", "Storage"),
+        ("General Hardware", "General hardware"),
+    )
+    component_name = forms.ChoiceField(choices=COMPONENT_CHOICES)
+
+    class Meta:
+        model = RepairEvaluation
+        fields = ("component_name", "repair_result", "comments")
+        widgets = {"repair_result": forms.RadioSelect, "comments": forms.Textarea(attrs={"rows": 3})}
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("repair_result") == "NOT_FIXED" and not cleaned.get("comments", "").strip():
+            self.add_error("comments", "Explain why this component could not be fixed.")
+        return cleaned
 
 
 class ProfileForm(forms.ModelForm):
     class Meta:
         model = User
-        fields = ("first_name", "last_name", "email", "phone")
+        fields = ("first_name", "last_name", "email", "phone_number")

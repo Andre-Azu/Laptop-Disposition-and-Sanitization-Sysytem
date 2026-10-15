@@ -1,167 +1,170 @@
-import hashlib
+import datetime
 import uuid
-from decimal import Decimal
 
 from django.contrib.auth.models import AbstractUser
-from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
-from django.utils import timezone
 
 
 class User(AbstractUser):
-    class Role(models.TextChoices):
-        DEVICE_MANAGER = "manager", "Device Manager"
-        IT_ADMIN = "it_admin", "IT Administrator"
+    ROLE_CHOICES = (
+        ("IT_ADMIN", "IT Administrator"),
+        ("DEVICE_MANAGER", "Device Manager"),
+    )
+    APPROVAL_CHOICES = (
+        ("PENDING", "Pending Approval"),
+        ("APPROVED", "Approved"),
+        ("REJECTED", "Rejected"),
+    )
 
-    role = models.CharField(max_length=20, choices=Role.choices, default=Role.DEVICE_MANAGER)
-    phone = models.CharField(max_length=30, blank=True)
-    admin_approved = models.BooleanField(default=False)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="DEVICE_MANAGER")
+    phone_number = models.CharField(max_length=15, blank=True, null=True)
+    admin_approval_status = models.CharField(max_length=20, choices=APPROVAL_CHOICES, default="APPROVED")
 
     def is_it_admin(self):
-        return self.is_superuser or (self.role == self.Role.IT_ADMIN and self.admin_approved)
+        return self.is_superuser or (self.role == "IT_ADMIN" and self.admin_approval_status == "APPROVED")
+
+    def __str__(self):
+        return f"{self.username} ({self.get_role_display()})"
 
 
 class Device(models.Model):
     class Status(models.TextChoices):
-        REGISTERED = "registered", "Registered"
-        AWAITING_ASSESSMENT = "awaiting_assessment", "Awaiting assessment"
-        PENDING_PROCESSING = "pending_processing", "Pending processing"
-        SANITIZATION = "sanitization", "Sanitization queued"
-        REPAIR = "repair", "Repair queued"
-        VERIFIED = "verified", "IT verified"
-        COMPLETED = "completed", "Completed"
-        FAILED = "failed", "Failed sanitization"
+        REGISTERED = "REGISTERED", "Registered"
+        SELF_ASSESSED = "SELF_ASSESSED", "Self Assessed"
+        PENDING_PROCESSING = "PENDING_PROCESSING", "Pending Processing"
+        IT_VERIFIED = "IT_VERIFIED", "IT Verified"
+        SANITIZED = "SANITIZED", "Sanitization Completed"
+        FAILED = "FAILED", "Sanitization Failed"
+        COMPLETED = "COMPLETED", "Completed"
+        DONATED = "DONATED", "Donated for Parts"
+
+    STATUS_CHOICES = Status.choices
+    MANUFACTURER_CHOICES = (
+        ("Dell", "Dell"),
+        ("HP", "HP (Hewlett-Packard)"),
+        ("Lenovo", "Lenovo"),
+        ("Acer", "Acer"),
+        ("ASUS", "ASUS"),
+        ("Apple", "Apple"),
+        ("Toshiba", "Toshiba"),
+    )
+    PROCESSOR_CHOICES = (
+        ("Intel", "Intel"),
+        ("AMD", "AMD"),
+        ("Apple", "Apple"),
+        ("Qualcomm", "Qualcomm"),
+        ("MediaTek", "MediaTek"),
+    )
+    MODEL_SERIES = (
+        ("Dell", (("Latitude", "Latitude"), ("Inspiron", "Inspiron"), ("XPS", "XPS"), ("Precision", "Precision"), ("Vostro", "Vostro"))),
+        ("HP", (("EliteBook", "EliteBook"), ("ProBook", "ProBook"), ("Pavilion", "Pavilion"), ("ZBook", "ZBook"), ("Envy", "Envy"))),
+        ("Lenovo", (("ThinkPad", "ThinkPad"), ("ThinkBook", "ThinkBook"), ("IdeaPad", "IdeaPad"), ("Yoga", "Yoga"), ("Legion", "Legion"))),
+        ("Acer", (("Aspire", "Aspire"), ("Swift", "Swift"), ("TravelMate", "TravelMate"), ("Predator", "Predator"))),
+        ("ASUS", (("Zenbook", "Zenbook"), ("Vivobook", "Vivobook"), ("ExpertBook", "ExpertBook"), ("ROG", "ROG"), ("TUF", "TUF"))),
+        ("Apple", (("MacBook Air", "MacBook Air"), ("MacBook Pro", "MacBook Pro"))),
+        ("Toshiba", (("Dynabook Satellite", "Dynabook Satellite"), ("Portégé", "Portégé"), ("Tecra", "Tecra"))),
+    )
 
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="devices")
-    asset_tag = models.CharField(max_length=40, unique=True)
-    manufacturer = models.CharField(max_length=80)
+    device_name = models.CharField(max_length=100, help_text="Nickname for your device")
+    make = models.CharField(max_length=50, choices=MANUFACTURER_CHOICES)
     model_name = models.CharField(max_length=100)
     serial_number = models.CharField(max_length=100, unique=True)
-    processor = models.CharField(max_length=120, blank=True)
-    ram_gb = models.PositiveSmallIntegerField(default=8)
-    storage_gb = models.PositiveIntegerField(default=256)
-    screen_inches = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True)
-    initial_purchase_value = models.DecimalField(max_digits=12, decimal_places=2)
-    year_of_purchase = models.PositiveSmallIntegerField()
-    refurbished = models.BooleanField(default=False)
-    is_public = models.BooleanField(default=False)
-    status = models.CharField(max_length=30, choices=Status.choices, default=Status.REGISTERED)
-    current_net_valuation = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    processor = models.CharField(max_length=50, choices=PROCESSOR_CHOICES)
+    ram_gb = models.IntegerField(default=8)
+    storage_info = models.CharField(max_length=100, default="256GB SSD")
+    initial_value_kes = models.DecimalField(max_digits=10, decimal_places=2, default=50000.00)
+    purchase_date = models.DateField(default=datetime.date.today)
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="REGISTERED")
+    failure_notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        constraints = [models.UniqueConstraint(fields=["owner", "device_name"], name="unique_owner_device_nickname")]
+
+    @property
+    def current_net_valuation(self):
+        age = max(0, datetime.date.today().year - self.purchase_date.year)
+        depreciated_baseline = float(self.initial_value_kes) * ((1 - 0.15) ** age)
+        return round(max(5000.0, depreciated_baseline), 2)
+
+    @property
+    def cashback_incentive(self):
+        return round(self.current_net_valuation * 0.03, 2)
 
     def __str__(self):
-        return f"{self.manufacturer} {self.model_name} ({self.asset_tag})"
-
-    def update_valuation(self, assessment_score_ratio=Decimal("0")):
-        years_used = max(0, timezone.now().year - self.year_of_purchase)
-        condition_factor = Decimal(str(assessment_score_ratio))
-        depreciation_factor = max(Decimal("0.10"), Decimal("1.00") - Decimal("0.15") * years_used)
-        self.current_net_valuation = (self.initial_purchase_value * depreciation_factor * condition_factor).quantize(Decimal("0.01"))
-        self.save(update_fields=["current_net_valuation", "updated_at"])
-        return self.current_net_valuation
-
-
-class TechnicalAssessment(models.Model):
-    class Result(models.TextChoices):
-        PASSED = "passed", "Passed"
-        WARNING = "warning", "Warning"
-        FAILED = "failed", "Failed"
-
-    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="assessments")
-    inspector = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="technical_assessments")
-    boot = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    keyboard = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    storage = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    cpu = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    bluetooth = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    usb = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    display = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    battery_health = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    ram = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    wifi = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    camera = models.CharField(max_length=10, choices=Result.choices, default=Result.PASSED)
-    assessment_score_ratio = models.DecimalField(max_digits=5, decimal_places=4, default=Decimal("1.0000"))
-    notes = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    COMPONENTS = ("boot", "keyboard", "storage", "cpu", "bluetooth", "usb", "display", "battery_health", "ram", "wifi", "camera")
-
-    def save(self, *args, **kwargs):
-        scores = {self.Result.PASSED: Decimal("1"), self.Result.WARNING: Decimal("0.5"), self.Result.FAILED: Decimal("0")}
-        self.assessment_score_ratio = sum((scores[getattr(self, name)] for name in self.COMPONENTS), Decimal("0")) / Decimal(len(self.COMPONENTS))
-        super().save(*args, **kwargs)
-        self.device.update_valuation(self.assessment_score_ratio)
+        return f"{self.device_name} - {self.make} {self.model_name} ({self.serial_number})"
 
 
 class OwnerSelfAssessment(models.Model):
-    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="self_assessments")
-    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="self_assessments")
-    pathway = models.CharField(max_length=12, choices=(("sanitize", "Sanitization"), ("repair", "Repair"), ("both", "Both")))
-    scores = models.JSONField(default=dict)
-    backup_confirmed = models.BooleanField(default=False)
+    COMPONENT_STATUS_CHOICES = (
+        ("WORKING", "Working"),
+        ("PARTIALLY_WORKING", "Partially Working"),
+        ("NOT_WORKING", "Not Working"),
+        ("MISSING", "Missing"),
+        ("NOT_ASSESSED", "Not Assessed"),
+    )
+    PATHWAY_CHOICES = (
+        ("SANITIZATION", "Sanitization"),
+        ("REPAIR", "Repair"),
+        ("BOTH", "Repair and sanitization"),
+    )
+
+    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="self_assessment")
+    screen_status = models.CharField(max_length=20, choices=COMPONENT_STATUS_CHOICES, default="WORKING")
+    keyboard_status = models.CharField(max_length=20, choices=COMPONENT_STATUS_CHOICES, default="WORKING")
+    battery_status = models.CharField(max_length=20, choices=COMPONENT_STATUS_CHOICES, default="WORKING")
+    chassis_status = models.CharField(max_length=20, choices=COMPONENT_STATUS_CHOICES, default="WORKING")
+    storage_status = models.CharField(max_length=20, choices=COMPONENT_STATUS_CHOICES, default="WORKING")
+    chosen_pathway = models.CharField(max_length=50, choices=PATHWAY_CHOICES, default="SANITIZATION")
+    notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 
-class AuditLog(models.Model):
-    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="audit_logs")
-    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="device_audit_logs")
-    action = models.CharField(max_length=120)
-    details = models.TextField(blank=True)
-    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+class TechnicalAssessment(models.Model):
+    COMPONENT_STATUS_CHOICES = OwnerSelfAssessment.COMPONENT_STATUS_CHOICES
+    COMPONENTS = ("screen_status", "keyboard_status", "battery_status", "chassis_status", "storage_status")
 
-    class Meta:
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return f"{self.action} - {self.device.asset_tag}"
-
-
-class SanitizationCertificate(models.Model):
-    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="certificates")
-    certificate_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    sha256_hash = models.CharField(max_length=64, unique=True)
-    verification_code = models.CharField(max_length=24, blank=True)
-    generated_at = models.DateTimeField(auto_now_add=True)
-    verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="verified_certificates")
-    qr_payload = models.TextField(blank=True)
-
-    def save(self, *args, **kwargs):
-        if not self.sha256_hash:
-            payload = f"{self.device.asset_tag}:{self.certificate_id}:{timezone.now().isoformat()}"
-            self.sha256_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-        if not self.verification_code:
-            self.verification_code = self.sha256_hash[:16].upper()
-        if not self.qr_payload:
-            self.qr_payload = f"Certificate {self.certificate_id} | SHA-256 {self.sha256_hash}"
-        super().save(*args, **kwargs)
-
-
-class SanitizationJob(models.Model):
-    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="sanitization_jobs")
-    started_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="sanitization_jobs")
-    current_step = models.PositiveSmallIntegerField(default=0, validators=[MaxValueValidator(5)])
-    started_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["-updated_at"]
+    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="technical_assessment")
+    assessed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    screen_status = models.CharField(max_length=20, choices=COMPONENT_STATUS_CHOICES, default="WORKING")
+    keyboard_status = models.CharField(max_length=20, choices=COMPONENT_STATUS_CHOICES, default="WORKING")
+    battery_status = models.CharField(max_length=20, choices=COMPONENT_STATUS_CHOICES, default="WORKING")
+    chassis_status = models.CharField(max_length=20, choices=COMPONENT_STATUS_CHOICES, default="WORKING")
+    storage_status = models.CharField(max_length=20, choices=COMPONENT_STATUS_CHOICES, default="WORKING")
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class RepairEvaluation(models.Model):
-    class Result(models.TextChoices):
-        PASSED = "passed", "Passed"
-        WARNING = "warning", "Warning"
-        FAILED = "failed", "Failed"
+    REPAIR_RESULT_CHOICES = (("FIXED", "Fixed"), ("NOT_FIXED", "Not Fixed"))
 
-    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="repair_evaluations")
-    technician = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="repair_evaluations")
-    result = models.CharField(max_length=10, choices=Result.choices, default=Result.WARNING)
-    technician_comments = models.TextField(blank=True)
+    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="repairs")
+    technician = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    component_name = models.CharField(max_length=50, default="General Hardware")
+    repair_result = models.CharField(max_length=20, choices=REPAIR_RESULT_CHOICES)
+    comments = models.TextField(help_text="Mandatory explanation if component is Not Fixed")
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class SanitizationJob(models.Model):
+    PENDING = "PENDING"
+    PASS = "PASS"
+    FAIL = "FAIL"
+
+    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="sanitization_jobs")
+    status = models.CharField(max_length=30, default="PENDING")
+    started_at = models.DateTimeField(auto_now_add=True)
+
+
+class SanitizationCertificate(models.Model):
+    cert_code = models.CharField(max_length=50, unique=True, default=uuid.uuid4)
+    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="certificate")
+    verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    wipe_method = models.CharField(max_length=100, default="DoD 5220.22-M 3-Pass Overwrite")
+    crypto_hash = models.CharField(max_length=64, default="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    issued_at = models.DateTimeField(auto_now_add=True)
 
 
 class CollectionSlot(models.Model):
@@ -176,16 +179,23 @@ class CollectionSlot(models.Model):
 
 class DonationLedger(models.Model):
     class Status(models.TextChoices):
-        PENDING = "pending", "Pending approval"
-        APPROVED = "approved", "Approved"
-        PAID = "paid", "Paid"
-        REJECTED = "rejected", "Rejected"
+        PENDING = "PENDING", "Pending approval"
+        APPROVED = "APPROVED", "Approved"
+        PAID = "PAID", "Paid"
+        REJECTED = "REJECTED", "Rejected"
 
-    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="donation_entries")
-    donor = models.ForeignKey(User, on_delete=models.CASCADE, related_name="donation_rewards")
-    payout_amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))])
-    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
-    mpesa_reference = models.CharField(max_length=40, blank=True)
-    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="approved_donations")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="donation_ledger")
+    donated_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="donation_rewards")
+    donation_value_kes = models.DecimalField(max_digits=10, decimal_places=2)
+    cashback_kes = models.DecimalField(max_digits=10, decimal_places=2)
+    payout_status = models.CharField(max_length=20, choices=Status.choices, default=Status.PAID)
+    transaction_ref = models.CharField(max_length=50, default="MPESA-MOCK-TXN")
+    donated_at = models.DateTimeField(auto_now_add=True)
+
+
+class AuditLog(models.Model):
+    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="audit_logs")
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    action_stage = models.CharField(max_length=50, default="REGISTERED")
+    description = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
