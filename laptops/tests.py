@@ -1,8 +1,8 @@
-from datetime import date
 from decimal import Decimal
 
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from .forms import DeviceRegistrationForm, OwnerSelfAssessmentForm, RepairEvaluationForm
 from .models import Device, DonationLedger, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment, User
@@ -25,7 +25,7 @@ class WorkflowTests(TestCase):
             "ram_gb": 16,
             "storage_info": "512GB SSD",
             "initial_value_kes": Decimal("100000.00"),
-            "purchase_date": date.today(),
+            "purchase_date": timezone.now(),
         }
         values.update(overrides)
         return Device.objects.create(**values)
@@ -57,20 +57,80 @@ class WorkflowTests(TestCase):
             "ram_gb": 8,
             "storage_info": "256GB SSD",
             "initial_value_kes": "50000.00",
-            "purchase_date": date.today().strftime("%Y-%m"),
+            "purchase_date": f"{timezone.now():%Y-%m-%dT%H:%M}",
         }
         form = DeviceRegistrationForm(data=form_data, owner=self.manager)
         self.assertFalse(form.is_valid())
         self.assertIn("device_name", form.errors)
         self.assertIn("serial_number", form.errors)
 
-    def test_assessment_lookup_allows_active_device_and_rejects_completed(self):
+    def test_purchase_date_form_accepts_date_and_time(self):
+        purchase_date = timezone.now().replace(second=0, microsecond=0)
+        form = DeviceRegistrationForm(data={
+            "device_name": "Work laptop",
+            "make": "Dell",
+            "model_name": "Latitude",
+            "serial_number": "SERIAL-DATETIME",
+            "processor": "Intel",
+            "ram_gb": 8,
+            "storage_info": "256GB SSD",
+            "initial_value_kes": "50000.00",
+            "purchase_date": purchase_date.strftime("%Y-%m-%dT%H:%M"),
+        }, owner=self.manager)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["purchase_date"].hour, purchase_date.hour)
+        self.assertEqual(form.cleaned_data["purchase_date"].minute, purchase_date.minute)
+
+    def test_donated_device_is_hidden_from_manager_disposition_choices(self):
+        DonationLedger.objects.create(
+            device=self.device,
+            donated_by=self.manager,
+            donation_value_kes=Decimal("100000"),
+            cashback_kes=Decimal("3000"),
+            payout_status=DonationLedger.Status.PENDING,
+        )
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("disposition"))
+        self.assertNotIn(self.device, response.context["devices"])
+
+    def test_assessment_lookup_excludes_it_verified_and_donated_devices(self):
         self.client.force_login(self.admin)
-        self.assertEqual(self.client.get(reverse("assessments"), {"device": self.device.pk}).status_code, 200)
-        self.device.status = Device.Status.SANITIZED
-        self.device.save(update_fields=["status"])
         response = self.client.get(reverse("assessments"), {"device": self.device.pk})
-        self.assertRedirects(response, reverse("assessments"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(self.device, response.context["devices"])
+        for status in (Device.Status.IT_VERIFIED, Device.Status.DONATED, Device.Status.SANITIZED, Device.Status.COMPLETED):
+            with self.subTest(status=status):
+                self.device.status = status
+                self.device.save(update_fields=["status"])
+                response = self.client.get(reverse("assessments"))
+                self.assertNotIn(self.device, response.context["devices"])
+                response = self.client.get(reverse("assessments"), {"device": self.device.pk})
+                self.assertRedirects(response, reverse("assessments"))
+
+    def test_inventory_details_include_manager_assessment(self):
+        OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="REPAIR", screen_status="PARTIALLY_WORKING")
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("devices"))
+        self.assertContains(response, "View details")
+        self.assertContains(response, "Device manager physical assessment")
+        self.assertContains(response, "Partially Working")
+
+    def test_device_inventory_filters_by_selected_component_condition(self):
+        partially_working = self.make_device(device_name="Partially working laptop")
+        not_working = self.make_device(device_name="Not working laptop")
+        TechnicalAssessment.objects.create(device=self.device, assessed_by=self.admin, screen_status="WORKING")
+        TechnicalAssessment.objects.create(device=partially_working, assessed_by=self.admin, screen_status="PARTIALLY_WORKING")
+        TechnicalAssessment.objects.create(device=not_working, assessed_by=self.admin, screen_status="NOT_WORKING")
+        self.client.force_login(self.admin)
+
+        for condition, expected_device in (
+            ("WORKING", self.device),
+            ("PARTIALLY_WORKING", partially_working),
+            ("NOT_WORKING", not_working),
+        ):
+            with self.subTest(condition=condition):
+                response = self.client.get(reverse("devices"), {"component": "screen", "condition": condition})
+                self.assertEqual(list(response.context["devices"]), [expected_device])
 
     def test_radio_self_assessment_and_repair_comment_validation(self):
         form = OwnerSelfAssessmentForm(data={
@@ -88,6 +148,77 @@ class WorkflowTests(TestCase):
         repair = RepairEvaluationForm(data={"component_name": "Screen", "repair_result": "NOT_FIXED", "comments": "   "})
         self.assertFalse(repair.is_valid())
         self.assertIn("comments", repair.errors)
+        fixed = RepairEvaluationForm(data={"component_name": "Screen", "repair_result": "FIXED", "comments": "   "})
+        self.assertTrue(fixed.is_valid(), fixed.errors)
+
+    def test_repair_evaluation_removes_device_from_queue_and_allows_blank_fixed_comment(self):
+        OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="REPAIR", screen_status="PARTIALLY_WORKING")
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("repairs"), {
+            "device": self.device.pk,
+            "repair_result": "FIXED",
+            "comments": "",
+        })
+        self.assertRedirects(response, reverse("repairs"))
+        self.assertEqual(RepairEvaluation.objects.get(device=self.device).comments, "")
+        self.assertEqual(RepairEvaluation.objects.get(device=self.device).component_name, "Screen")
+        response = self.client.get(reverse("repairs"))
+        self.assertNotIn(self.device, response.context["devices"])
+
+    def test_repair_queue_only_offers_components_flagged_in_technical_assessment(self):
+        OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="REPAIR")
+        TechnicalAssessment.objects.create(
+            device=self.device,
+            assessed_by=self.admin,
+            screen_status="PARTIALLY_WORKING",
+            keyboard_status="WORKING",
+            battery_status="MISSING",
+            chassis_status="NOT_WORKING",
+            storage_status="NOT_ASSESSED",
+        )
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("repairs"))
+        self.assertContains(response, "Screen · Partially Working")
+        self.assertContains(response, "Battery · Missing")
+        self.assertContains(response, "Chassis · Not Working")
+        self.assertNotContains(response, "Keyboard")
+        self.assertNotContains(response, "Storage ·")
+        self.assertEqual(response.context["devices"][0].repairable_components, [
+            ("Screen", "Partially Working"),
+            ("Battery", "Missing"),
+            ("Chassis", "Not Working"),
+        ])
+
+    def test_repair_evaluation_marks_every_flagged_component(self):
+        OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="REPAIR")
+        TechnicalAssessment.objects.create(
+            device=self.device,
+            assessed_by=self.admin,
+            screen_status="PARTIALLY_WORKING",
+            battery_status="MISSING",
+        )
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("repairs"), {
+            "device": self.device.pk,
+            "repair_result": "NOT_FIXED",
+            "comments": "Parts unavailable",
+        })
+        self.assertRedirects(response, reverse("repairs"))
+        self.assertEqual(
+            set(RepairEvaluation.objects.filter(device=self.device).values_list("component_name", flat=True)),
+            {"Screen", "Battery"},
+        )
+
+    def test_repair_queue_includes_devices_sent_by_manager_without_it_assessment(self):
+        OwnerSelfAssessment.objects.create(
+            device=self.device,
+            chosen_pathway="REPAIR",
+            battery_status="PARTIALLY_WORKING",
+        )
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("repairs"))
+        self.assertIn(self.device, response.context["devices"])
+        self.assertContains(response, "Battery · Partially Working")
 
     def test_mock_sanitization_pass_verifies_and_issues_certificate(self):
         OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="SANITIZATION")
@@ -104,6 +235,25 @@ class WorkflowTests(TestCase):
         self.assertEqual(self.client.get(reverse("certificate_qr", args=[certificate.pk])).status_code, 200)
         self.device.refresh_from_db()
         self.assertEqual(self.device.status, Device.Status.SANITIZED)
+
+    def test_sanitization_verification_reuses_existing_certificate(self):
+        OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="SANITIZATION")
+        self.client.force_login(self.admin)
+        self.client.post(reverse("sanitization"), {"device": self.device.pk, "action": "pass"})
+        certificate = SanitizationCertificate.objects.create(device=self.device, verified_by=self.admin)
+        response = self.client.post(reverse("sanitization"), {"device": self.device.pk, "action": "verify"})
+        self.assertRedirects(response, reverse("sanitization"))
+        self.assertEqual(SanitizationCertificate.objects.filter(device=self.device).count(), 1)
+        self.assertEqual(SanitizationCertificate.objects.get(device=self.device).pk, certificate.pk)
+        self.assertEqual(SanitizationJob.objects.get(device=self.device).status, "VERIFIED")
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.status, Device.Status.SANITIZED)
+
+    def test_overview_keeps_sanitization_summary_without_it_verify_summary(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("overview"))
+        self.assertContains(response, "SANITIZATION COMPLETED")
+        self.assertNotContains(response, "IT VERIFIED")
 
     def test_mock_sanitization_fail_records_failure_note(self):
         OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="SANITIZATION")

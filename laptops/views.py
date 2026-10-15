@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model, login, logout
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q, Sum
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -65,7 +65,6 @@ def overview(request):
         "total_assets": Device.objects.count(),
         "awaiting_assessment": Device.objects.filter(status=Device.Status.REGISTERED).count(),
         "pending_processing": Device.objects.filter(status=Device.Status.PENDING_PROCESSING).count(),
-        "it_verified": Device.objects.filter(status=Device.Status.IT_VERIFIED).count(),
         "sanitization_completed": Device.objects.filter(status=Device.Status.SANITIZED).count(),
         "failed_sanitizations": SanitizationJob.objects.filter(status=SanitizationJob.FAIL).values("device_id").distinct().count(),
         "ewaste_recovered": DonationLedger.objects.filter(payout_status=DonationLedger.Status.PAID).aggregate(total=Sum("donation_value_kes"))["total"] or Decimal("0.00"),
@@ -76,22 +75,16 @@ def overview(request):
 
 @it_admin_required
 def device_inventory(request):
-    devices = _searched_devices(Device.objects.select_related("owner"), request.GET.get("q", "").strip())
+    devices = _searched_devices(Device.objects.select_related("owner", "self_assessment", "technical_assessment").prefetch_related("audit_logs"), request.GET.get("q", "").strip())
     component = request.GET.get("component", "")
-    minimum = request.GET.get("minimum", "")
+    condition = request.GET.get("condition", "")
     assessment_component = {"screen": "screen_status", "keyboard": "keyboard_status", "battery": "battery_status", "chassis": "chassis_status", "storage": "storage_status"}.get(component)
-    if assessment_component in TechnicalAssessment.COMPONENTS and minimum.isdigit():
-        threshold = int(minimum)
-        qualifying = []
-        for device in devices:
-            assessment = TechnicalAssessment.objects.filter(device=device).first()
-            result = getattr(assessment, assessment_component, "")
-            score = {"WORKING": 10, "PARTIALLY_WORKING": 5}.get(result, 0)
-            if score >= threshold:
-                qualifying.append(device.pk)
-        devices = devices.filter(pk__in=qualifying)
+    conditions = TechnicalAssessment.COMPONENT_STATUS_CHOICES[:3]
+    condition_values = {value for value, _ in conditions}
+    if assessment_component in TechnicalAssessment.COMPONENTS and condition in condition_values:
+        devices = devices.filter(**{f"technical_assessment__{assessment_component}": condition})
     components = [("screen", "Screen"), ("keyboard", "Keyboard"), ("battery", "Battery"), ("chassis", "Chassis"), ("storage", "Storage")]
-    return render(request, "laptops/devices.html", {"devices": devices, "components": components})
+    return render(request, "laptops/devices.html", {"devices": devices, "components": components, "conditions": conditions})
 
 
 @login_required
@@ -116,14 +109,14 @@ def my_devices(request):
 
 @it_admin_required
 def assessments(request):
-    terminal_statuses = [Device.Status.SANITIZED, Device.Status.COMPLETED]
+    terminal_statuses = [Device.Status.IT_VERIFIED, Device.Status.SANITIZED, Device.Status.COMPLETED, Device.Status.DONATED]
     devices = Device.objects.select_related("owner").exclude(status__in=terminal_statuses)
     selected_id = request.POST.get("device") or request.GET.get("device")
     selected = None
     if selected_id:
         selected = get_object_or_404(Device.objects.select_related("owner"), pk=selected_id)
         if selected.status in terminal_statuses:
-            messages.warning(request, "Sanitized or completed devices cannot be reassessed.")
+            messages.warning(request, "IT-verified, donated, completed, or sanitized devices cannot be reassessed.")
             return redirect("assessments")
     else:
         selected = devices.first()
@@ -170,13 +163,16 @@ def sanitization(request):
         elif action == "verify" and job and job.status == SanitizationJob.PASS:
             cert_code = uuid.uuid4()
             crypto_hash = hashlib.sha256(f"{device.serial_number}:{cert_code}:{timezone.now().isoformat()}".encode()).hexdigest()
-            certificate = SanitizationCertificate.objects.create(device=device, verified_by=request.user, cert_code=cert_code, crypto_hash=crypto_hash)
+            certificate, _ = SanitizationCertificate.objects.get_or_create(
+                device=device,
+                defaults={"verified_by": request.user, "cert_code": cert_code, "crypto_hash": crypto_hash},
+            )
             job.status = "VERIFIED"
             job.save(update_fields=["status"])
             device.status = Device.Status.SANITIZED
             device.save(update_fields=["status", "updated_at"])
             record_audit(device, request.user, "Sanitization verified", f"Certificate {certificate.cert_code} issued; SHA-256 {certificate.crypto_hash}.")
-            messages.success(request, "Wipe verified and certificate issued.")
+            messages.success(request, "Sanitization verified and marked complete.")
         else:
             messages.error(request, "That sanitization action is not available for this device.")
         return redirect("sanitization")
@@ -185,33 +181,72 @@ def sanitization(request):
 
 @it_admin_required
 def repairs(request):
-    repair_queue = Q(self_assessment__chosen_pathway__in=["REPAIR", "BOTH"]) & ~Q(status__in=[Device.Status.COMPLETED, Device.Status.SANITIZED, Device.Status.DONATED])
-    devices = Device.objects.filter(repair_queue).distinct().select_related("owner")
+    repairable_statuses = ("PARTIALLY_WORKING", "NOT_WORKING", "MISSING")
+    component_labels = {
+        "screen_status": "Screen",
+        "keyboard_status": "Keyboard",
+        "battery_status": "Battery",
+        "chassis_status": "Chassis",
+        "storage_status": "Storage",
+    }
+    candidates = Device.objects.filter(
+        self_assessment__chosen_pathway__in=["REPAIR", "BOTH"],
+        repairs__isnull=True,
+    ).exclude(
+        status__in=[Device.Status.COMPLETED, Device.Status.SANITIZED, Device.Status.DONATED]
+    ).select_related("owner", "self_assessment", "technical_assessment")
+    devices = []
+    status_labels = dict(TechnicalAssessment.COMPONENT_STATUS_CHOICES)
+    for device in candidates:
+        try:
+            assessment = device.technical_assessment
+        except TechnicalAssessment.DoesNotExist:
+            assessment = device.self_assessment
+        device.repairable_components = [
+            (component_labels[field], status_labels[getattr(assessment, field)])
+            for field in TechnicalAssessment.COMPONENTS
+            if getattr(assessment, field) in repairable_statuses
+        ]
+        if device.repairable_components:
+            device.repair_form = RepairEvaluationForm()
+            devices.append(device)
     if request.method == "POST":
-        device = get_object_or_404(Device.objects.filter(repair_queue).distinct(), pk=request.POST.get("device"))
+        device = next((queued_device for queued_device in devices if str(queued_device.pk) == request.POST.get("device")), None)
+        if device is None:
+            raise Http404
         form = RepairEvaluationForm(request.POST)
         if form.is_valid():
-            evaluation = form.save(commit=False)
-            evaluation.device = device
-            evaluation.technician = request.user
-            evaluation.save()
-            if evaluation.repair_result == "NOT_FIXED":
+            result = form.cleaned_data["repair_result"]
+            comments = form.cleaned_data["comments"]
+            for component, _ in device.repairable_components:
+                RepairEvaluation.objects.create(
+                    device=device,
+                    technician=request.user,
+                    component_name=component,
+                    repair_result=result,
+                    comments=comments,
+                )
+            if result == "NOT_FIXED":
                 device.status = Device.Status.FAILED
-                device.failure_notes = evaluation.comments
+                device.failure_notes = comments
                 device.save(update_fields=["failure_notes"])
             else:
                 device.status = Device.Status.PENDING_PROCESSING
             device.save(update_fields=["status", "updated_at"])
-            record_audit(device, request.user, f"Repair evaluation: {evaluation.get_repair_result_display()}", f"{evaluation.component_name}: {evaluation.comments}")
+            component_names = ", ".join(component for component, _ in device.repairable_components)
+            record_audit(device, request.user, f"Repair evaluation: {form.cleaned_data['repair_result']}", f"{component_names}: {comments}")
             messages.success(request, "Repair evaluation recorded.")
             return redirect("repairs")
-        return render(request, "laptops/repairs.html", {"devices": devices, "form": form, "active_device": device})
-    return render(request, "laptops/repairs.html", {"devices": devices, "form": RepairEvaluationForm()})
+        device.repair_form = form
+        return render(request, "laptops/repairs.html", {"devices": devices, "active_device": device})
+    return render(request, "laptops/repairs.html", {"devices": devices})
 
 
 @login_required
 def disposition(request):
-    owned_devices = Device.objects.filter(owner=request.user)
+    owned_devices = Device.objects.filter(owner=request.user).exclude(
+        Q(status=Device.Status.DONATED) | Q(donation_ledger__isnull=False)
+    )
     if request.user.is_it_admin():
         if request.method == "POST" and request.POST.get("action") in {"approve_donation", "reject_donation", "mark_paid", "approve_slot", "mark_collected"}:
             action = request.POST["action"]

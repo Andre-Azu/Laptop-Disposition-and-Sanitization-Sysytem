@@ -3,6 +3,7 @@ import uuid
 
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils import timezone
 
 
 class User(AbstractUser):
@@ -32,7 +33,7 @@ class Device(models.Model):
         REGISTERED = "REGISTERED", "Registered"
         SELF_ASSESSED = "SELF_ASSESSED", "Self Assessed"
         PENDING_PROCESSING = "PENDING_PROCESSING", "Pending Processing"
-        IT_VERIFIED = "IT_VERIFIED", "IT Verified"
+        IT_VERIFIED = "IT_VERIFIED", "IT Admin Verified"
         SANITIZED = "SANITIZED", "Sanitization Completed"
         FAILED = "FAILED", "Sanitization Failed"
         COMPLETED = "COMPLETED", "Completed"
@@ -74,7 +75,7 @@ class Device(models.Model):
     ram_gb = models.IntegerField(default=8)
     storage_info = models.CharField(max_length=100, default="256GB SSD")
     initial_value_kes = models.DecimalField(max_digits=10, decimal_places=2, default=50000.00)
-    purchase_date = models.DateField(default=datetime.date.today)
+    purchase_date = models.DateTimeField(default=timezone.now)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="REGISTERED")
     failure_notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

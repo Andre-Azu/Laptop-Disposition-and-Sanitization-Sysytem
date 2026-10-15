@@ -1,8 +1,7 @@
-from datetime import date
-
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm
+from django.utils import timezone
 
 from .models import Device, OwnerSelfAssessment, RepairEvaluation, TechnicalAssessment
 
@@ -28,9 +27,10 @@ class RegistrationForm(UserCreationForm):
 
 class DeviceRegistrationForm(forms.ModelForm):
     model_name = forms.ChoiceField(choices=(), required=True)
-    purchase_date = forms.DateField(
-        input_formats=["%Y-%m"],
-        widget=forms.DateInput(format="%Y-%m", attrs={"type": "month"}),
+    purchase_date = forms.DateTimeField(
+        label="Purchase date and time",
+        input_formats=["%Y-%m-%dT%H:%M"],
+        widget=forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}),
     )
 
     class Meta:
@@ -76,8 +76,8 @@ class DeviceRegistrationForm(forms.ModelForm):
         if model and model not in dict(allowed_models):
             self.add_error("model_name", "Choose a model series for the selected manufacturer.")
         purchase_date = cleaned.get("purchase_date")
-        if purchase_date and purchase_date > date.today():
-            self.add_error("purchase_date", "Purchase month cannot be in the future.")
+        if purchase_date and purchase_date > timezone.now():
+            self.add_error("purchase_date", "Purchase date and time cannot be in the future.")
         return cleaned
 
 
@@ -104,20 +104,12 @@ class TechnicalAssessmentForm(forms.ModelForm):
 
 
 class RepairEvaluationForm(forms.ModelForm):
-    COMPONENT_CHOICES = (
-        ("Screen", "Screen"),
-        ("Keyboard", "Keyboard"),
-        ("Battery", "Battery"),
-        ("Chassis", "Chassis"),
-        ("Storage", "Storage"),
-        ("General Hardware", "General hardware"),
-    )
-    component_name = forms.ChoiceField(choices=COMPONENT_CHOICES)
+    comments = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
     class Meta:
         model = RepairEvaluation
-        fields = ("component_name", "repair_result", "comments")
-        widgets = {"repair_result": forms.RadioSelect, "comments": forms.Textarea(attrs={"rows": 3})}
+        fields = ("repair_result", "comments")
+        widgets = {"repair_result": forms.RadioSelect}
 
     def clean(self):
         cleaned = super().clean()

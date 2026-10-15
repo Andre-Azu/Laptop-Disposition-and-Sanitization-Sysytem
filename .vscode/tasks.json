@@ -50,7 +50,7 @@
       "isBackground": true,
       "problemMatcher": {
         "owner": "django-server",
-        "pattern": [{"regexp": ".*", "file": 1, "message": 1}],
+        "pattern": [{"regexp": "^([A-Za-z_][A-Za-z0-9_]*): (.+)$", "code": 1, "message": 2}],
         "background": {"activeOnStart": true, "beginsPattern": "^Watching for file changes", "endsPattern": "^Starting development server at"}
       }
     }
