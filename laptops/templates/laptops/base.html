@@ -27,7 +27,7 @@
         <a class="nav-link {% if request.resolver_match.url_name == 'devices' %}active{% endif %}" href="{% url 'devices' %}"><span>▣</span> Devices</a>
         <a class="nav-link {% if request.resolver_match.url_name == 'assessments' %}active{% endif %}" href="{% url 'assessments' %}"><span>⌕</span> Assessments</a>
         <a class="nav-link {% if request.resolver_match.url_name == 'sanitization' %}active{% endif %}" href="{% url 'sanitization' %}"><span>◉</span> Sanitization</a>
-        <a class="nav-link {% if request.resolver_match.url_name == 'repairs' %}active{% endif %}" href="{% url 'repairs' %}"><span>⌁</span> Repairs</a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'repairs' or request.resolver_match.url_name == 'repair_execution' %}active{% endif %}" href="{% url 'repairs' %}"><span>⌁</span> Repairs</a>
         <a class="nav-link {% if request.resolver_match.url_name == 'disposition' %}active{% endif %}" href="{% url 'disposition' %}"><span>↗</span> Disposition</a>
         <a class="nav-link {% if request.resolver_match.url_name == 'certificates' %}active{% endif %}" href="{% url 'certificates' %}"><span>▤</span> Certificates</a>
       {% else %}

@@ -1,0 +1,51 @@
+{% extends 'laptops/base.html' %}
+{% block title %}Assessment Report | {{ device.device_name }}{% endblock %}
+{% block content %}
+<div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Assessments / Detailed report</p>
+    <h1 class="mt-2 text-3xl font-extrabold text-navy">{{ device.device_name }}</h1>
+    <p class="mt-1 text-sm text-slate-500">{{ device.make }} {{ device.model_name }} · Serial: <span class="font-mono">{{ device.serial_number }}</span></p>
+  </div>
+  <a href="{% url 'assessments' %}" class="btn btn-light">← Back to Assessments</a>
+</div>
+
+<div class="grid gap-5 lg:grid-cols-2">
+  <section class="panel overflow-hidden">
+    <div class="flex items-start justify-between border-b border-slate-100 bg-sky-50 p-5">
+      <div><p class="text-xs font-bold uppercase tracking-wide text-sky-700">Device manager assessment</p><h2 class="mt-1 text-lg font-extrabold text-navy">Owner self-assessment</h2></div>
+      {% if device.self_assessment %}<span class="rounded-lg bg-white px-3 py-2 text-lg font-extrabold text-navy shadow-sm">{{ device.self_assessment.overall_health_score }}/100</span>{% endif %}
+    </div>
+    <div class="p-5">
+      {% if device.self_assessment %}
+      <dl class="space-y-2 text-sm">
+        <div class="flex justify-between gap-4 rounded-lg bg-sky-50 px-3 py-2"><dt>Display &amp; Screen</dt><dd class="font-bold text-navy">{{ device.self_assessment.get_screen_status_display }}</dd></div>
+        <div class="flex justify-between gap-4 rounded-lg bg-sky-50 px-3 py-2"><dt>Battery &amp; Power</dt><dd class="font-bold text-navy">{{ device.self_assessment.get_battery_status_display }}</dd></div>
+        <div class="flex justify-between gap-4 rounded-lg bg-sky-50 px-3 py-2"><dt>Keyboard &amp; Touchpad</dt><dd class="font-bold text-navy">{{ device.self_assessment.get_keyboard_status_display }}</dd></div>
+        <div class="flex justify-between gap-4 rounded-lg bg-sky-50 px-3 py-2"><dt>Performance &amp; Storage</dt><dd class="font-bold text-navy">{{ device.self_assessment.get_storage_status_display }}</dd></div>
+        <div class="flex justify-between gap-4 rounded-lg bg-sky-50 px-3 py-2"><dt>Outer Casing</dt><dd class="font-bold text-navy">{{ device.self_assessment.get_chassis_status_display }}</dd></div>
+      </dl>
+      <div class="mt-4 rounded-lg border border-sky-200 bg-white p-3"><p class="text-xs text-slate-500">Selected service pathway</p><p class="mt-1 font-bold text-navy">{{ device.self_assessment.get_chosen_pathway_display }}</p></div>
+      {% if device.self_assessment.notes %}<div class="mt-3 rounded-lg border border-sky-200 bg-white p-3"><p class="text-xs text-slate-500">Device manager notes</p><p class="mt-1 text-sm text-slate-700">{{ device.self_assessment.notes }}</p></div>{% endif %}
+      {% else %}<p class="text-sm text-slate-500">No owner self-assessment has been submitted.</p>{% endif %}
+    </div>
+  </section>
+
+  <section class="panel overflow-hidden">
+    <div class="flex items-start justify-between border-b border-slate-100 bg-amber-50 p-5">
+      <div><p class="text-xs font-bold uppercase tracking-wide text-amber-700">IT administrator assessment</p><h2 class="mt-1 text-lg font-extrabold text-navy">Technical verification</h2></div>
+      <span class="rounded-lg bg-white px-3 py-2 text-lg font-extrabold text-navy shadow-sm">{{ assessment.overall_score|floatformat:1 }}/100</span>
+    </div>
+    <div class="p-5">
+      <p class="rounded-lg border border-brand/10 bg-slate-50 px-3 py-2 text-sm font-bold text-navy">{{ assessment.rating_label }}</p>
+      <dl class="mt-4 space-y-2">
+        {% for name, score in assessment.module_scores.items %}
+        <div class="flex justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2 text-sm"><dt class="font-semibold text-navy">{{ name }}</dt><dd class="font-bold text-slate-600">{% if score != None %}{{ score|floatformat:1 }}%{% else %}N/A{% endif %}</dd></div>
+        {% endfor %}
+      </dl>
+      {% if assessment.notes %}<div class="mt-4 rounded-lg border border-amber-200 bg-white p-3"><p class="text-xs text-slate-500">IT administrator notes</p><p class="mt-1 text-sm text-slate-700">{{ assessment.notes }}</p></div>{% endif %}
+      {% if assessment.completed_at %}<p class="mt-4 text-right text-xs font-semibold text-slate-500">Completed: {{ assessment.completed_at|date:"M d, Y" }} at {{ assessment.completed_at|date:"H:i" }}</p>{% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

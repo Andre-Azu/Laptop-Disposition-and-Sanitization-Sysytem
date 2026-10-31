@@ -16,6 +16,7 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.utils.text import slugify
 
 from .forms import DeviceRegistrationForm, OwnerSelfAssessmentForm, ProfileForm, RegistrationForm, RepairEvaluationForm, TechnicalAssessmentForm
 from .models import AuditLog, CollectionSlot, Device, DonationLedger, ITAssessment, ITAssessmentDraft, ITAssessmentScoringEngine, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment
@@ -49,7 +50,7 @@ def home(request):
     if request.user.is_it_admin():
         return redirect("overview")
     devices = Device.objects.filter(owner=request.user)
-    public_inventory = _searched_devices(Device.objects.exclude(owner=request.user).exclude(status__in=[Device.Status.FAILED, Device.Status.DONATED]).select_related("owner", "self_assessment", "technical_assessment"), request.GET.get("q", "").strip())
+    public_inventory = _searched_devices(Device.objects.exclude(owner=request.user).exclude(status__in=[Device.Status.FAILED, Device.Status.SANITIZATION_FAILED, Device.Status.DONATED]).select_related("owner", "self_assessment", "technical_assessment"), request.GET.get("q", "").strip())
     reward_total = request.user.donation_rewards.filter(payout_status=DonationLedger.Status.PAID).aggregate(total=Sum("cashback_kes"))["total"] or Decimal("0.00")
     recovered = DonationLedger.objects.filter(payout_status=DonationLedger.Status.PAID).aggregate(total=Sum("donation_value_kes"))["total"] or Decimal("0.00")
     return render(request, "laptops/dashboard.html", {"devices": devices, "inventory": public_inventory, "asset_count": devices.count(), "reward_total": reward_total, "recovered_total": recovered})
@@ -135,17 +136,24 @@ def device_detail(request, device_id):
 def assessments(request):
     active_devices = Device.objects.filter(
         status__in=[Device.Status.PENDING_PROCESSING, Device.Status.IT_IN_PROGRESS]
-    ).select_related("owner").order_by("-updated_at")
+    ).select_related("owner").order_by("-created_at", "-pk")
     devices = active_devices
 
     portal_queryset = Device.objects.exclude(
-        status__in=[Device.Status.REGISTERED, Device.Status.SELF_ASSESSED]
-    ).select_related("owner", "it_assessment", "it_assessment_draft")
+        status=Device.Status.REGISTERED
+    ).select_related("owner", "self_assessment", "it_assessment", "it_assessment_draft")
 
     portal_devices = []
-    for device in portal_queryset.order_by("-updated_at"):
+    for device in portal_queryset.order_by("-created_at", "-pk"):
         assessment = getattr(device, "it_assessment", None)
-        if device.status in [Device.Status.IT_VERIFIED, Device.Status.SANITIZED, Device.Status.COMPLETED, Device.Status.DONATED] or assessment:
+        if device.status in [
+            Device.Status.IT_VERIFIED,
+            Device.Status.SANITIZED,
+            Device.Status.COMPLETED,
+            Device.Status.DONATED,
+            Device.Status.SCHEDULED_FOR_COLLECTION,
+            Device.Status.COLLECTED,
+        ] or assessment:
             category = "completed"
         elif device.status == Device.Status.IT_IN_PROGRESS:
             category = "incomplete"
@@ -160,7 +168,6 @@ def assessments(request):
         answered = sum(1 for field in ITAssessmentScoringEngine.ALL_FIELDS if field in answers and answers[field])
         progress = round(min(answered, 55) / 55 * 100)
         pending_queue.append({"device": device, "progress": progress})
-    pending_queue.sort(key=lambda item: item["progress"], reverse=True)
 
     counts = {
         "all": len(portal_devices),
@@ -205,14 +212,30 @@ def assessments(request):
 
 
 @it_admin_required
+def assessment_report(request, device_id):
+    device = get_object_or_404(
+        Device.objects.select_related("owner", "self_assessment", "it_assessment"),
+        pk=device_id,
+    )
+    assessment = getattr(device, "it_assessment", None)
+    if not assessment:
+        messages.warning(request, "This device does not have a completed IT assessment report.")
+        return redirect("it_assessments_portal")
+    return render(request, "laptops/assessment_report.html", {
+        "device": device,
+        "assessment": assessment,
+    })
+
+
+@it_admin_required
 def it_assessment(request, device_id=None):
-    active_devices = Device.objects.filter(status__in=[Device.Status.PENDING_PROCESSING, Device.Status.IT_IN_PROGRESS]).select_related("owner", "it_assessment_draft")
+    active_devices = Device.objects.filter(status__in=[Device.Status.PENDING_ADMIN_ASSESMENT, Device.Status.IT_ADMIN_ASSESMENT_IN_PROGRESS]).select_related("owner", "it_assessment_draft")
     if device_id:
         device = Device.objects.select_related("owner", "it_assessment_draft", "it_assessment").filter(pk=device_id).first()
         if device is None:
             messages.warning(request, "That device no longer exists or the link is outdated.")
             return redirect("it_assessments_portal")
-        if device.status not in [Device.Status.PENDING_PROCESSING, Device.Status.IT_IN_PROGRESS]:
+        if device.status not in [Device.Status.PENDING_ADMIN_ASSESMENT, Device.Status.IT_ADMIN_ASSESMENT_IN_PROGRESS]:
             messages.warning(request, "Only pending or in-progress devices can be assessed.")
             return redirect("it_assessments_portal")
     else:
@@ -221,8 +244,8 @@ def it_assessment(request, device_id=None):
         return render(request, "laptops/it_assessment.html", {"device": None, "modules": [], "active_devices": active_devices, "pending_queue": [], "options": ITAssessmentScoringEngine.OPTIONS})
     assessment = getattr(device, "it_assessment", None)
 
-    if device.status == Device.Status.PENDING_PROCESSING:
-        device.status = Device.Status.IT_IN_PROGRESS
+    if device.status == Device.Status.PENDING_ADMIN_ASSESMENT:
+        device.status = Device.Status.IT_ADMIN_ASSESMENT_IN_PROGRESS
         device.save(update_fields=["status", "updated_at"])
 
     pending_queue = []
@@ -232,7 +255,6 @@ def it_assessment(request, device_id=None):
         answer_count = sum(1 for field in ITAssessmentScoringEngine.ALL_FIELDS if field in answers and answers[field])
         progress = round(min(answer_count, 55) / 55 * 100)
         pending_queue.append({"device": queue_device, "progress": progress})
-    pending_queue.sort(key=lambda item: item["progress"], reverse=True)
     draft = getattr(device, "it_assessment_draft", None)
     legacy_answer_map = {
         "GOOD": "GOOD", "Good / Working": "GOOD", "Working / Good": "GOOD",
@@ -275,25 +297,30 @@ def it_assessment(request, device_id=None):
             assessment.completed_at = timezone.now()
             assessment.save(update_fields=["completed_at", "updated_at"])
             ITAssessmentDraft.objects.filter(device=device).delete()
-            device.status = Device.Status.IT_VERIFIED
+            device.status = Device.Status.IT_ADMIN_ASSESMENT_COMPLETE
             device.save(update_fields=["status", "updated_at"])
 
-            if device.owner.email:
+            dispatch_report = request.POST.get("dispatch_report") == "yes"
+            report_dispatched = False
+            if dispatch_report and device.owner.email:
                 send_mail(
                     subject=f"Verified IT Assessment Report - {device.device_name}",
                     message=(
                         f"Dear {device.owner.get_full_name() or device.owner.username},\n\n"
                         f"The verified IT audit report for {device.device_name} is complete.\n"
                         f"Overall Verified IT Score: {assessment.overall_score:.1f} / 100\n"
-                        f"Rating: {assessment.rating_label}\n"
+                        f"Rating: {assessment.rating_label}\n\n"
+                        f"You can also view the full report in the Assessments tab or on the device details page."
                     ),
                     from_email=None,
                     recipient_list=[device.owner.email],
                     fail_silently=False,
                 )
+                report_dispatched = True
 
             record_audit(device, request.user, "IT admin assessment complete", assessment.rating_label)
-            messages.success(request, "IT verification assessment completed and submitted to the Assessments tab.")
+            dispatch_message = " and emailed to the owner" if report_dispatched else "; owner email dispatch was not selected"
+            messages.success(request, f"IT verification assessment completed and submitted to the Assessments tab{dispatch_message}.")
             return redirect("it_assessments_portal")
         initial_answers = answers
         score_assessment = ITAssessment(device=device)
@@ -366,7 +393,7 @@ def save_it_assessment_draft(request, device_id):
 
 @it_admin_required
 def sanitization(request):
-    eligible = Q(self_assessment__chosen_pathway__in=["SANITIZATION", "BOTH"]) & ~Q(status__in=[Device.Status.SANITIZED, Device.Status.FAILED, Device.Status.COMPLETED, Device.Status.DONATED])
+    eligible = Q(self_assessment__chosen_pathway__in=["SANITIZATION", "BOTH"]) & ~Q(status__in=[Device.Status.SANITIZED, Device.Status.FAILED, Device.Status.SANITIZATION_FAILED, Device.Status.COMPLETED, Device.Status.DONATED])
     devices = Device.objects.filter(eligible).distinct().select_related("owner").prefetch_related("sanitization_jobs")
     if request.method == "POST":
         device = get_object_or_404(Device.objects.filter(eligible).distinct(), pk=request.POST.get("device"))
@@ -382,7 +409,7 @@ def sanitization(request):
                 record_audit(device, request.user, "Sanitization mock passed", "Mock wipe test passed; IT verification is required.")
                 messages.success(request, "Mock sanitization passed. Verify the result to issue a certificate.")
             else:
-                device.status = Device.Status.FAILED
+                device.status = Device.Status.SANITIZATION_FAILED
                 device.failure_notes = request.POST.get("failure_notes", "Mock sanitization failed.").strip() or "Mock sanitization failed."
                 record_audit(device, request.user, "Sanitization failed", device.failure_notes)
                 messages.error(request, "Mock sanitization failed. Device moved to the failed queue.")
@@ -408,6 +435,48 @@ def sanitization(request):
     return render(request, "laptops/sanitization.html", {"devices": devices})
 
 
+def _repair_component_flags(device):
+    repairable_statuses = ("PARTIALLY_WORKING", "NOT_WORKING", "MISSING")
+    component_labels = {
+        "screen_status": "Screen",
+        "keyboard_status": "Keyboard",
+        "battery_status": "Battery",
+        "chassis_status": "Chassis",
+        "storage_status": "Storage",
+    }
+    status_labels = dict(OwnerSelfAssessment.COMPONENT_STATUS_CHOICES)
+    owner_flags = []
+    diagnostic_flags = []
+
+    try:
+        owner_assessment = device.self_assessment
+        for field in TechnicalAssessment.COMPONENTS:
+            status_code = getattr(owner_assessment, field)
+            if status_code in repairable_statuses:
+                owner_flags.append((component_labels[field], status_labels[status_code], status_code))
+    except OwnerSelfAssessment.DoesNotExist:
+        pass
+
+    try:
+        diagnostic_assessment = device.technical_assessment
+        for field in TechnicalAssessment.COMPONENTS:
+            status_code = getattr(diagnostic_assessment, field)
+            if status_code in repairable_statuses:
+                diagnostic_flags.append((component_labels[field], status_labels[status_code], status_code))
+    except TechnicalAssessment.DoesNotExist:
+        pass
+
+    components_by_name = {}
+    for component, label, status_code in owner_flags + diagnostic_flags:
+        components_by_name.setdefault(component, {"name": component, "owner_status": None, "diagnostic_status": None})
+        if (component, label, status_code) in owner_flags:
+            components_by_name[component]["owner_status"] = label
+        if (component, label, status_code) in diagnostic_flags:
+            components_by_name[component]["diagnostic_status"] = label
+
+    return owner_flags, diagnostic_flags, list(components_by_name.values())
+
+
 @it_admin_required
 def repairs(request):
     repairable_statuses = ("PARTIALLY_WORKING", "NOT_WORKING", "MISSING")
@@ -427,6 +496,10 @@ def repairs(request):
     devices = []
     status_labels = dict(TechnicalAssessment.COMPONENT_STATUS_CHOICES)
     for device in candidates:
+        owner_flags, diagnostic_flags, flagged_components = _repair_component_flags(device)
+        device.owner_assessment_flags = owner_flags
+        device.it_diagnostic_flags = diagnostic_flags
+        device.flagged_components = flagged_components
         try:
             assessment = device.technical_assessment
         except TechnicalAssessment.DoesNotExist:
@@ -471,11 +544,72 @@ def repairs(request):
     return render(request, "laptops/repairs.html", {"devices": devices})
 
 
+@it_admin_required
+def repair_execution(request, device_id):
+    device = get_object_or_404(Device.objects.select_related("owner", "self_assessment", "technical_assessment"), pk=device_id)
+    _owner_flags, _diagnostic_flags, flagged_components = _repair_component_flags(device)
+
+    if request.method == "POST":
+        missing_components = []
+        results = {}
+        for component in flagged_components:
+            key = "component_" + slugify(component["name"]).replace("-", "")
+            value = request.POST.get(key)
+            if value not in ("FIXED", "NOT_FIXED"):
+                missing_components.append(component["name"])
+            else:
+                results[component["name"]] = value
+
+        comments = request.POST.get("technician_notes", request.POST.get("comments", "")).strip()
+        for component in flagged_components:
+            component["posted_result"] = results.get(component["name"])
+        if missing_components:
+            messages.error(request, "Select a repair outcome for every flagged component.")
+            return render(request, "laptops/repair_execution.html", {
+                "device": device,
+                "flagged_components": flagged_components,
+                "comments": comments,
+                "missing_components": missing_components,
+                "posted_results": results,
+            }, status=400)
+
+        for component_name, result in results.items():
+            RepairEvaluation.objects.create(
+                device=device,
+                technician=request.user,
+                component_name=component_name,
+                repair_result=result,
+                comments=comments,
+            )
+
+        if "NOT_FIXED" in results.values():
+            device.status = Device.Status.FAILED
+            device.failure_notes = comments
+            device.save(update_fields=["status", "failure_notes", "updated_at"])
+        else:
+            device.status = Device.Status.PENDING_PROCESSING
+            device.save(update_fields=["status", "updated_at"])
+
+        component_names = ", ".join(results.keys())
+        record_audit(device, request.user, "Repair execution finalized", f"{component_names}: {comments}")
+        messages.success(request, "Repair work finalized and saved.")
+        return redirect("repairs")
+
+    return render(request, "laptops/repair_execution.html", {
+        "device": device,
+        "flagged_components": flagged_components,
+        "comments": "",
+        "missing_components": [],
+        "posted_results": {},
+    })
+
+
 @login_required
 def disposition(request):
-    owned_devices = Device.objects.filter(owner=request.user).exclude(
-        Q(status=Device.Status.DONATED) | Q(donation_ledger__isnull=False)
-    )
+    owned_devices = Device.objects.filter(
+        owner=request.user,
+        status__in=[Device.Status.IT_ADMIN_ASSESMENT_COMPLETE, Device.Status.SCHEDULED_FOR_COLLECTION],
+    ).exclude(status__in=[Device.Status.COLLECTED, Device.Status.DONATED]).order_by("-created_at", "-pk")
     if request.user.is_it_admin():
         if request.method == "POST" and request.POST.get("action") in {"approve_donation", "reject_donation", "mark_paid", "approve_slot", "mark_collected"}:
             action = request.POST["action"]
@@ -494,11 +628,17 @@ def disposition(request):
                 slot.approved = True
                 slot.collected = action == "mark_collected"
                 slot.save(update_fields=["approved", "collected"])
+                if slot.collected:
+                    slot.device.status = Device.Status.COLLECTED
+                    slot.device.save(update_fields=["status", "updated_at"])
+                elif slot.approved:
+                    slot.device.status = Device.Status.SCHEDULED_FOR_COLLECTION
+                    slot.device.save(update_fields=["status", "updated_at"])
                 record_audit(slot.device, request.user, "Collection slot updated", "Pickup marked collected." if slot.collected else "Collection slot approved.")
             messages.success(request, "Disposition record updated.")
             return redirect("disposition")
-        donations = DonationLedger.objects.select_related("device", "donated_by").order_by("-donated_at")
-        slots = CollectionSlot.objects.select_related("device", "requested_by").order_by("scheduled_for")
+        donations = DonationLedger.objects.select_related("device", "donated_by").order_by("-donated_at", "-pk")
+        slots = CollectionSlot.objects.select_related("device", "requested_by").order_by("-created_at", "-pk")
         return render(request, "laptops/disposition.html", {"is_admin": True, "donations": donations, "slots": slots})
 
     if request.method == "POST":
@@ -517,6 +657,8 @@ def disposition(request):
                 messages.error(request, "Choose a valid future collection date and time.")
                 return redirect("disposition")
             slot = CollectionSlot.objects.create(device=device, requested_by=request.user, scheduled_for=when, location=location or "Strathmore University")
+            device.status = Device.Status.SCHEDULED_FOR_COLLECTION
+            device.save(update_fields=["status", "updated_at"])
             record_audit(device, request.user, "Pickup requested", f"Collection requested for {when:%d %b %Y, %H:%M} at {slot.location}.")
             messages.success(request, "Collection request submitted.")
         elif action == "donate":
@@ -531,7 +673,13 @@ def disposition(request):
             record_audit(device, request.user, "Device donated to Parts Bank", f"3% cashback requested: KES {entry.cashback_kes}.")
             messages.success(request, f"Donation submitted. Pending cashback: KES {payout}.")
         return redirect("disposition")
-    return render(request, "laptops/disposition.html", {"is_admin": False, "devices": owned_devices, "slots": CollectionSlot.objects.filter(requested_by=request.user).select_related("device"), "donations": DonationLedger.objects.filter(donated_by=request.user).select_related("device")})
+    owner_slots = CollectionSlot.objects.filter(requested_by=request.user).select_related("device").order_by("-created_at", "-pk")
+    active_slots_by_device = {slot.device_id: slot for slot in owner_slots}
+    active_devices = list(owned_devices.select_related("owner", "self_assessment", "it_assessment"))
+    for device in active_devices:
+        slot = active_slots_by_device.get(device.pk)
+        device.days_until_collection = max(0, (timezone.localdate(slot.scheduled_for) - timezone.localdate()).days) if slot else None
+    return render(request, "laptops/disposition.html", {"is_admin": False, "devices": active_devices, "slots": owner_slots, "donations": DonationLedger.objects.filter(donated_by=request.user).select_related("device").order_by("-donated_at", "-pk")})
 
 
 @login_required
@@ -576,7 +724,7 @@ def user_assessments_tab(request):
         Device.objects.filter(owner=request.user)
         .exclude(status=Device.Status.REGISTERED)
         .select_related("owner", "self_assessment", "it_assessment")
-        .order_by("-updated_at")
+        .order_by("-created_at", "-pk")
     )
     return render(request, "laptops/user_assessments.html", {"devices": devices})
 
@@ -624,7 +772,7 @@ def self_assessment(request):
                 "chosen_pathway": submitted.chosen_pathway,
                 "notes": submitted.notes,
             })
-            device.status = Device.Status.PENDING_PROCESSING
+            device.status = Device.Status.PENDING_ADMIN_ASSESMENT
             device.save(update_fields=["status", "updated_at"])
             record_audit(device, request.user, "Self-assessment submitted by owner", "Self-assessment submitted by owner")
             submitted_assessment = assessment

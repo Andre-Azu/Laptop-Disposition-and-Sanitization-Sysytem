@@ -58,8 +58,17 @@
         {% endif %}
       </article>
 
-      <article class="bg-[#F7F0E5] p-5 md:p-6">
-        {% if laptop.it_assessment %}
+      {% if laptop.status == 'PENDING_Admin_assesment' or laptop.status == 'IT_ADMIN_ASSESMENT_IN_PROGRESS' %}
+      <article class="bg-rose-50 border border-rose-100 p-5 md:p-6">
+          <p class="text-xs font-bold uppercase tracking-[.14em] text-rose-700">IT Verification</p>
+          <div class="mt-3 rounded-lg border border-rose-200 bg-white/60 px-4 py-5">
+            <p class="text-lg font-extrabold text-rose-800">Pending IT Admin Assessment</p>
+            <p class="mt-1 text-sm text-slate-500">Your device is awaiting technical inspection.</p>
+          </div>
+          <button type="button" disabled class="mt-5 w-full cursor-not-allowed rounded-lg border border-rose-200 bg-rose-100 px-4 py-3 text-sm font-bold text-rose-300">View IT Verified Report</button>
+      </article>
+      {% elif laptop.it_assessment %}
+      <article class="bg-amber-50/90 border border-amber-300 p-5 md:p-6">
           <p class="text-xs font-bold uppercase tracking-[.14em] text-[#80531E]">IT Verified Assessment</p>
           <p class="mt-2 text-4xl font-extrabold text-navy">{{ laptop.it_assessment.overall_score }} <span class="text-base text-slate-500">/ 100</span></p>
           <span class="mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-bold {{ laptop.it_assessment.rating_tailwind }}">{{ laptop.it_assessment.rating_label }}</span>
@@ -75,15 +84,9 @@
               {% if laptop.it_assessment.notes %}<div class="mt-3 rounded-lg border border-[#DFC69A] bg-white px-3 py-2 text-sm"><p class="text-xs font-bold text-slate-500">IT notes</p><p class="mt-1 text-slate-700">{{ laptop.it_assessment.notes }}</p></div>{% endif %}
             </div>
           </details>
-        {% else %}
-          <p class="text-xs font-bold uppercase tracking-[.14em] text-[#80531E]">IT Verification</p>
-          <div class="mt-3 rounded-lg border border-[#DFC69A] bg-white/60 px-4 py-5">
-            <p class="text-lg font-extrabold text-[#80531E]">Pending IT Verification</p>
-            <p class="mt-1 text-sm text-slate-500">Your device is awaiting technical inspection.</p>
-          </div>
-          <button type="button" disabled class="mt-5 w-full cursor-not-allowed rounded-lg border border-[#DFC69A] bg-[#EADCC0] px-4 py-3 text-sm font-bold text-[#A98A5A]">View IT Verified Report</button>
-        {% endif %}
+          <p class="mt-2 text-xs text-amber-800">Completed {{ laptop.it_assessment.completed_at|date:'d M Y, H:i' }}</p>
       </article>
+      {% endif %}
     </div>
   </section>
   {% empty %}

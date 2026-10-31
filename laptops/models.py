@@ -31,16 +31,36 @@ class User(AbstractUser):
 class Device(models.Model):
     class Status(models.TextChoices):
         REGISTERED = "REGISTERED", "Registered"
-        SELF_ASSESSED = "SELF_ASSESSED", "Self Assessed"
-        PENDING_PROCESSING = "PENDING_PROCESSING", "Pending Processing"
-        IT_IN_PROGRESS = "IT_IN_PROGRESS", "IT Assessment In Progress"
-        IT_VERIFIED = "IT_VERIFIED", "IT Admin Verified"
-        SANITIZED = "SANITIZED", "Sanitization Completed"
-        FAILED = "FAILED", "Sanitization Failed"
-        COMPLETED = "COMPLETED", "Completed"
-        DONATED = "DONATED", "Donated for Parts"
+        PENDING_ADMIN_ASSESMENT = "PENDING_Admin_assesment", "Pending IT Admin Assessment"
+        IT_ADMIN_ASSESMENT_IN_PROGRESS = "IT_ADMIN_ASSESMENT_IN_PROGRESS", "IT Assessment In Progress"
+        IT_ADMIN_ASSESMENT_COMPLETE = "IT_Admin_assesment_complete", "IT Assessment Complete"
+        SCHEDULED_FOR_COLLECTION = "SCHEDULED_FOR_COLLECTION", "Scheduled for Collection"
+        COLLECTED = "COLLECTED", "Collected"
+        DONATED = "DONATED", "Donated"
 
-    STATUS_CHOICES = Status.choices
+    STATUS_CHOICES = [
+        ('REGISTERED', 'Registered'),
+        ('PENDING_Admin_assesment', 'Pending IT Admin Assessment'),
+        ('IT_ADMIN_ASSESMENT_IN_PROGRESS', 'IT Assessment In Progress'),
+        ('IT_Admin_assesment_complete', 'IT Assessment Complete'),
+        ('SCHEDULED_FOR_COLLECTION', 'Scheduled for Collection'),
+        ('COLLECTED', 'Collected'),
+        ('SANITIZATION_FAILED', 'SANITIZATION_FAILED'),
+        ('FAILED', 'FAILED'),
+        ('SANITIZED', 'SANITIZED'),
+        ('COMPLETED', 'Completed'),
+        ('DONATED', 'Donated'),
+    ]
+
+    # Compatibility names for existing internal workflows; values are the finalized statuses.
+    Status.PENDING_PROCESSING = Status.PENDING_ADMIN_ASSESMENT
+    Status.IT_IN_PROGRESS = Status.IT_ADMIN_ASSESMENT_IN_PROGRESS
+    Status.IT_VERIFIED = Status.IT_ADMIN_ASSESMENT_COMPLETE
+    Status.SELF_ASSESSED = Status.PENDING_ADMIN_ASSESMENT
+    Status.COMPLETED = "COMPLETED"
+    Status.SANITIZED = "SANITIZED"
+    Status.FAILED = "FAILED"
+    Status.SANITIZATION_FAILED = "SANITIZATION_FAILED"
     MANUFACTURER_CHOICES = (
         ("Dell", "Dell"),
         ("HP", "HP (Hewlett-Packard)"),
@@ -84,6 +104,7 @@ class Device(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        ordering = ["-created_at", "-pk"]
         constraints = [models.UniqueConstraint(fields=["owner", "device_name"], name="unique_owner_device_nickname")]
 
     @property

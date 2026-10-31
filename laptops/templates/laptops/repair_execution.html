@@ -1,0 +1,83 @@
+{% extends 'laptops/base.html' %}
+{% block title %}Active Repair Workstation{% endblock %}
+{% block content %}
+<div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Repair work / Active workstation</p>
+    <h1 class="mt-2 text-3xl font-extrabold">{{ device.device_name }}</h1>
+    <p class="mt-1 text-sm text-slate-500">{{ device.make }} {{ device.model_name }} · {{ device.owner.get_full_name|default:device.owner.username }}</p>
+  </div>
+  <a href="{% url 'repairs' %}" class="btn btn-light">← Back to queue</a>
+</div>
+<form method="post" id="repairExecutionForm" class="space-y-4">
+  {% csrf_token %}
+  {% for component in flagged_components %}
+  {% with key=component.name|lower %}
+  <article class="repair-component panel transition-all duration-200{% if component.name in missing_components %} border-rose-500 ring-4 ring-rose-500/20{% endif %}" data-component-card>
+    <div class="border-b border-slate-100 px-5 py-4">
+      <h2 class="text-lg font-extrabold">{{ component.name }}</h2>
+      <div class="mt-2 flex flex-wrap gap-2 text-xs">
+        {% if component.owner_status %}<span class="badge bg-blue-100 text-blue-700">OWNER · {{ component.owner_status|upper }}</span>{% endif %}
+        {% if component.diagnostic_status %}<span class="badge bg-amber-100 text-amber-700">IT · {{ component.diagnostic_status|upper }}</span>{% endif %}
+      </div>
+    </div>
+    <fieldset class="px-5 py-5">
+      <legend class="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Repair outcome</legend>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <label class="flex cursor-pointer items-center gap-3 rounded border border-slate-200 px-4 py-3 hover:border-brand">
+          <input type="radio" name="component_{{ component.name|slugify|cut:'-' }}" value="FIXED" class="h-4 w-4 accent-blue-700" {% if component.posted_result == 'FIXED' %}checked{% endif %}>
+          <span class="font-semibold">Fixed / Restored</span>
+        </label>
+        <label class="flex cursor-pointer items-center gap-3 rounded border border-slate-200 px-4 py-3 hover:border-brand">
+          <input type="radio" name="component_{{ component.name|slugify|cut:'-' }}" value="NOT_FIXED" class="h-4 w-4 accent-blue-700" {% if component.posted_result == 'NOT_FIXED' %}checked{% endif %}>
+          <span class="font-semibold">Not Repairable</span>
+        </label>
+      </div>
+      <p class="missing-message mt-3{% if not component.name in missing_components %} hidden{% endif %} text-sm font-bold text-red-700">Select one repair outcome for this component.</p>
+    </fieldset>
+  </article>
+  {% endwith %}
+  {% empty %}
+  <div class="panel p-10 text-center">
+    <p class="font-bold">No flagged components found for this device.</p>
+  </div>
+  {% endfor %}
+
+  <section class="panel p-5">
+    <label for="technician_notes" class="block text-xs font-bold uppercase tracking-wide text-slate-500">Technician Service Comments (Optional)</label>
+    <textarea id="technician_notes" name="technician_notes" rows="4" class="mt-2" placeholder="Add optional service notes, work performed, or parts replaced.">{{ comments }}</textarea>
+  </section>
+  <div class="flex justify-end">
+    <button type="submit" class="btn btn-primary">FINALIZE &amp; SAVE REPAIR</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const form = document.getElementById('repairExecutionForm');
+  if (!form) return;
+
+  form.addEventListener('submit', function (event) {
+    let firstMissing = null;
+    document.querySelectorAll('[data-component-card]').forEach(function (card) {
+      card.classList.remove('border-rose-500', 'ring-4', 'ring-rose-500/20');
+      const message = card.querySelector('.missing-message');
+      if (message) message.classList.add('hidden');
+
+      const selected = card.querySelector('input[type="radio"]:checked');
+      if (!selected) {
+        card.classList.add('border-rose-500', 'ring-4', 'ring-rose-500/20');
+        if (message) message.classList.remove('hidden');
+        if (!firstMissing) firstMissing = card;
+      }
+    });
+
+    if (firstMissing) {
+      event.preventDefault();
+      firstMissing.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+})();
+</script>
+{% endblock %}

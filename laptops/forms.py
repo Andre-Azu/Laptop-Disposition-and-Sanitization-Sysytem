@@ -30,11 +30,18 @@ class RegistrationForm(UserCreationForm):
 class DeviceRegistrationForm(forms.ModelForm):
     model_name = forms.ChoiceField(choices=(), required=True)
     acquisition_month = forms.ChoiceField(
-        choices=[(f"{month:02d}", f"{month:02d}") for month in range(1, 13)],
+        choices=[("", "Select month")] + [
+            (f"{month:02d}", datetime.date(2000, month, 1).strftime("%B"))
+            for month in range(1, 13)
+        ],
         required=True,
-        widget=forms.HiddenInput(),
+        widget=forms.Select(attrs={"class": "field mt-1"}),
     )
-    acquisition_year = forms.ChoiceField(choices=(), required=True, widget=forms.HiddenInput())
+    acquisition_year = forms.ChoiceField(
+        choices=(),
+        required=True,
+        widget=forms.Select(attrs={"class": "field mt-1"}),
+    )
     acquisition_period = forms.CharField(required=False, widget=forms.HiddenInput())
 
     class Meta:
@@ -54,8 +61,9 @@ class DeviceRegistrationForm(forms.ModelForm):
         make = self.data.get(self.add_prefix("make")) or self.initial.get("make") or getattr(self.instance, "make", "")
         self.fields["model_name"].choices = [("", "Choose a model series")] + list(dict(Device.MODEL_SERIES).get(make, ()))
         current_year = timezone.localdate().year
-        self.fields["acquisition_year"].choices = [(str(year), str(year)) for year in range(current_year, current_year - 16, -1)]
-        self.fields["acquisition_year"].widget.attrs["max_length"] = None
+        self.fields["acquisition_year"].choices = [("", "Select year")] + [
+            (str(year), str(year)) for year in range(current_year, current_year - 16, -1)
+        ]
 
     def clean_device_name(self):
         name = self.cleaned_data["device_name"].strip()

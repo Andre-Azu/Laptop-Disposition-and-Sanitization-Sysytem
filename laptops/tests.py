@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .forms import DeviceRegistrationForm, OwnerSelfAssessmentForm, RepairEvaluationForm
-from .models import Device, DonationLedger, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment, User
+from .models import Device, DonationLedger, ITAssessment, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment, User
 
 
 class WorkflowTests(TestCase):
@@ -36,6 +36,48 @@ class WorkflowTests(TestCase):
         for name in ("overview", "devices", "assessments", "sanitization", "repairs", "disposition", "profile", "certificates"):
             with self.subTest(page=name):
                 self.assertEqual(self.client.get(reverse(name)).status_code, 200)
+
+    def test_assessment_portal_cards_filter_pending_incomplete_completed_devices(self):
+        incomplete = self.make_device(device_name="Incomplete laptop")
+        completed = self.make_device(device_name="Completed laptop")
+
+        self.device.status = Device.Status.PENDING_PROCESSING
+        self.device.save(update_fields=["status"])
+        incomplete.status = Device.Status.IT_IN_PROGRESS
+        incomplete.save(update_fields=["status"])
+        completed.status = Device.Status.IT_VERIFIED
+        completed.save(update_fields=["status"])
+        ITAssessment.objects.create(device=completed, assessed_by=self.admin, completed_at=datetime.datetime.now(datetime.timezone.utc), notes="Verified")
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("assessments"))
+
+        categories = {item["device"].pk: item["category"] for item in response.context["portal_devices"]}
+        self.assertEqual(categories[self.device.pk], "pending")
+        self.assertEqual(categories[incomplete.pk], "incomplete")
+        self.assertEqual(categories[completed.pk], "completed")
+        self.assertContains(response, 'data-filter="pending"')
+        self.assertContains(response, 'data-filter="incomplete"')
+        self.assertContains(response, "View Detailed Report")
+
+    def test_completed_assessment_report_button_has_working_detail_route(self):
+        ITAssessment.objects.create(
+            device=self.device,
+            assessed_by=self.admin,
+            completed_at=datetime.datetime.now(datetime.timezone.utc),
+            notes="Verified report",
+        )
+        self.device.status = Device.Status.IT_VERIFIED
+        self.device.save(update_fields=["status"])
+        self.client.force_login(self.admin)
+
+        portal_response = self.client.get(reverse("assessments"))
+        self.assertContains(portal_response, reverse("assessment_report", args=[self.device.pk]))
+
+        report_response = self.client.get(reverse("assessment_report", args=[self.device.pk]))
+        self.assertEqual(report_response.status_code, 200)
+        self.assertContains(report_response, "Detailed report")
+        self.assertContains(report_response, "Verified report")
 
     def test_it_assessment_rejects_devices_that_are_no_longer_active(self):
         self.device.status = Device.Status.FAILED
@@ -286,7 +328,7 @@ class WorkflowTests(TestCase):
         self.client.force_login(self.admin)
         self.client.post(reverse("sanitization"), {"device": self.device.pk, "action": "fail", "failure_notes": "Storage check failed"})
         self.device.refresh_from_db()
-        self.assertEqual(self.device.status, Device.Status.FAILED)
+        self.assertEqual(self.device.status, Device.Status.SANITIZATION_FAILED)
         self.assertEqual(self.device.failure_notes, "Storage check failed")
         self.assertEqual(SanitizationJob.objects.get(device=self.device).status, SanitizationJob.FAIL)
 
