@@ -1,8 +1,144 @@
 {% extends 'laptops/base.html' %}
 {% block title %}Self-assessment | Strathmore Laptop Recovery{% endblock %}
 {% block content %}
-<div class="mb-6"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">My devices / Condition report</p><h1 class="mt-2 text-3xl font-extrabold">Self-assessment</h1><p class="mt-1 text-sm text-slate-500">Choose the condition that best describes each component.</p></div>
-<form method="post" class="panel max-w-5xl p-5 md:p-7">{% csrf_token %}{% if form.non_field_errors %}<div class="mb-4 rounded bg-red-50 p-3 text-sm text-danger">{{ form.non_field_errors }}</div>{% endif %}<label class="mb-6 block text-xs font-bold">Registered device{{ form.device }}{% if form.device.errors %}<span class="mt-1 block text-danger">{{ form.device.errors|join:', ' }}</span>{% endif %}</label>
-<div class="space-y-5">{% for field in form %}{% if field.name == 'screen_status' or field.name == 'keyboard_status' or field.name == 'battery_status' or field.name == 'chassis_status' or field.name == 'storage_status' %}<fieldset class="border-b border-slate-100 pb-4"><legend class="mb-3 text-sm font-bold">{{ field.label }}</legend><div class="flex flex-wrap gap-x-5 gap-y-2">{% for radio in field %}<label class="inline-flex items-center gap-2 text-xs text-slate-600">{{ radio.tag }}{{ radio.choice_label }}</label>{% endfor %}</div>{% if field.errors %}<p class="mt-1 text-xs text-danger">{{ field.errors|join:', ' }}</p>{% endif %}</fieldset>{% endif %}{% endfor %}</div>
-<fieldset class="mt-6"><legend class="text-sm font-bold">Service pathway</legend><div class="mt-3 flex flex-wrap gap-x-6 gap-y-2">{% for radio in form.chosen_pathway %}<label class="inline-flex items-center gap-2 text-sm">{{ radio.tag }}{{ radio.choice_label }}</label>{% endfor %}</div>{% if form.chosen_pathway.errors %}<p class="mt-1 text-xs text-danger">{{ form.chosen_pathway.errors|join:', ' }}</p>{% endif %}</fieldset><label class="mt-6 block text-xs font-bold">Additional notes{{ form.notes }}</label><label class="mt-5 flex items-start gap-3 rounded border border-amber-200 bg-amber-50 p-4 text-sm"><span class="pt-1">{{ form.backup_confirmed }}</span><span>{{ form.backup_confirmed.label }}{% if form.backup_confirmed.errors %}<span class="mt-1 block text-xs text-danger">{{ form.backup_confirmed.errors|join:', ' }}</span>{% endif %}</span></label><div class="mt-6 flex justify-end"><button class="btn btn-primary">Submit self-assessment</button></div></form>
+<div class="mb-8 max-w-5xl">
+  <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Device check</p>
+  <h1 class="mt-2 text-3xl font-extrabold text-navy">How is your laptop?</h1>
+  <p class="mt-2 text-sm text-slate-500">Choose the option that best describes each part of your device.</p>
+</div>
+
+<form method="post" class="max-w-5xl" id="self-assessment-form">
+  {% csrf_token %}
+  <input type="hidden" name="chosen_pathway" value="SANITIZATION">
+  {% if form.non_field_errors %}<div class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+  <section class="panel mb-5 p-5 md:p-7">
+    <label class="block text-sm font-bold text-navy">Select your device</label>
+    <div class="mt-2">{{ form.device }}</div>
+    {% if form.device.errors %}<p class="mt-2 text-xs text-danger">{{ form.device.errors|join:', ' }}</p>{% endif %}
+  </section>
+
+  <section class="panel mb-5 p-5 md:p-7 transition" id="q_card_1">
+    <div class="mb-5"><h2 class="text-xl font-extrabold text-navy">Display &amp; Screen</h2><p class="mt-1 text-sm text-slate-500">Screen condition &amp; hinge stability</p></div>
+    <fieldset data-question="1"><legend class="sr-only">Display and screen condition</legend><div class="grid gap-3 md:grid-cols-3">{% for radio in form.screen_status %}{% if radio.choice_label != 'Not Assessed' and radio.choice_label != 'Missing' %}<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-brand/50 hover:bg-slate-50"><span class="mt-0.5"><input type="checkbox" name="{{ form.screen_status.html_name }}" value="{{ radio.data.value }}" class="question-option" {% if radio.data.selected %}checked{% endif %}></span><span><span class="block text-sm font-bold text-navy">{{ radio.choice_label }}</span><span class="mt-1 block text-xs leading-5 text-slate-500">{% if radio.choice_label == 'Working' %}Clear display, no visible flaws{% elif radio.choice_label == 'Partially Working' %}Sometimes flickers or the hinge feels loose{% else %}Cracked display or severe visual faults{% endif %}</span></span></label>{% endif %}{% endfor %}</div></fieldset>
+    {% if form.screen_status.errors %}<p class="mt-2 text-xs text-danger">{{ form.screen_status.errors|join:', ' }}</p>{% endif %}
+  </section>
+
+  <section class="panel mb-5 p-5 md:p-7 transition" id="q_card_2">
+    <div class="mb-5"><h2 class="text-xl font-extrabold text-navy">Battery &amp; Power</h2><p class="mt-1 text-sm text-slate-500">Unplugged battery life &amp; charging reliability</p></div>
+    <fieldset data-question="2"><legend class="sr-only">Battery and power condition</legend><div class="grid gap-3 md:grid-cols-3">{% for radio in form.battery_status %}{% if radio.choice_label != 'Not Assessed' and radio.choice_label != 'Missing' %}<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-brand/50 hover:bg-slate-50"><span class="mt-0.5"><input type="checkbox" name="{{ form.battery_status.html_name }}" value="{{ radio.data.value }}" class="question-option" {% if radio.data.selected %}checked{% endif %}></span><span><span class="block text-sm font-bold text-navy">{{ radio.choice_label }}</span><span class="mt-1 block text-xs leading-5 text-slate-500">{% if radio.choice_label == 'Working' %}Holds charge well{% elif radio.choice_label == 'Partially Working' %}Drains quickly or sometimes charges{% else %}Must stay plugged in{% endif %}</span></span></label>{% endif %}{% endfor %}</div></fieldset>
+    {% if form.battery_status.errors %}<p class="mt-2 text-xs text-danger">{{ form.battery_status.errors|join:', ' }}</p>{% endif %}
+  </section>
+
+  <section class="panel mb-5 p-5 md:p-7">
+    <div class="mb-5"><h2 class="text-xl font-extrabold text-navy">Inputs &amp; Outer Casing</h2><p class="mt-1 text-sm text-slate-500">Keyboard, touchpad responsiveness &amp; body condition</p></div>
+    <div class="space-y-6">
+      <fieldset id="q_card_3" class="transition" data-question="3"><legend class="mb-3 text-sm font-bold text-slate-700">Keyboard &amp; touchpad</legend><div class="grid gap-3 md:grid-cols-3">{% for radio in form.keyboard_status %}{% if radio.choice_label != 'Not Assessed' and radio.choice_label != 'Missing' %}<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-brand/50 hover:bg-slate-50"><span class="mt-0.5"><input type="checkbox" name="{{ form.keyboard_status.html_name }}" value="{{ radio.data.value }}" class="question-option" {% if radio.data.selected %}checked{% endif %}></span><span><span class="block text-sm font-bold text-navy">{{ radio.choice_label }}</span><span class="mt-1 block text-xs leading-5 text-slate-500">{% if radio.choice_label == 'Working' %}Responds reliably{% elif radio.choice_label == 'Partially Working' %}Sometimes misses inputs{% else %}Key or touchpad not responding{% endif %}</span></span></label>{% endif %}{% endfor %}</div></fieldset>
+      <fieldset id="q_card_4" class="transition" data-question="4"><legend class="mb-3 text-sm font-bold text-slate-700">Body condition</legend><div class="grid gap-3 md:grid-cols-3">{% for radio in form.chassis_status %}{% if radio.choice_label != 'Not Assessed' and radio.choice_label != 'Missing' %}<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-brand/50 hover:bg-slate-50"><span class="mt-0.5"><input type="checkbox" name="{{ form.chassis_status.html_name }}" value="{{ radio.data.value }}" class="question-option" {% if radio.data.selected %}checked{% endif %}></span><span><span class="block text-sm font-bold text-navy">{{ radio.choice_label }}</span><span class="mt-1 block text-xs leading-5 text-slate-500">{% if radio.choice_label == 'Working' %}Clean and structurally sound{% elif radio.choice_label == 'Partially Working' %}Minor cracks or dents{% else %}Major damage or broken casing{% endif %}</span></span></label>{% endif %}{% endfor %}</div></fieldset>
+    </div>
+    {% if form.keyboard_status.errors %}<p class="mt-2 text-xs text-danger">{{ form.keyboard_status.errors|join:', ' }}</p>{% endif %}{% if form.chassis_status.errors %}<p class="mt-2 text-xs text-danger">{{ form.chassis_status.errors|join:', ' }}</p>{% endif %}
+  </section>
+
+  <section class="panel mb-5 p-5 md:p-7 transition" id="q_card_5">
+    <div class="mb-5"><h2 class="text-xl font-extrabold text-navy">Performance &amp; Thermal Condition</h2><p class="mt-1 text-sm text-slate-500">System speed, lags, noise &amp; overheating</p></div>
+    <fieldset data-question="5"><legend class="sr-only">Performance and thermal condition</legend><div class="grid gap-3 md:grid-cols-3">{% for radio in form.storage_status %}{% if radio.choice_label != 'Not Assessed' and radio.choice_label != 'Missing' %}<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-brand/50 hover:bg-slate-50"><span class="mt-0.5"><input type="checkbox" name="{{ form.storage_status.html_name }}" value="{{ radio.data.value }}" class="question-option" {% if radio.data.selected %}checked{% endif %}></span><span><span class="block text-sm font-bold text-navy">{{ radio.choice_label }}</span><span class="mt-1 block text-xs leading-5 text-slate-500">{% if radio.choice_label == 'Working' %}Fast and smooth; normal temperature{% elif radio.choice_label == 'Partially Working' %}Occasional freezes or fan noise{% else %}Constant freezes, very loud noise or overheating{% endif %}</span></span></label>{% endif %}{% endfor %}</div></fieldset>
+    {% if form.storage_status.errors %}<p class="mt-2 text-xs text-danger">{{ form.storage_status.errors|join:', ' }}</p>{% endif %}
+  </section>
+
+  <section class="panel mb-5 p-5 md:p-7">
+    <label class="block text-sm font-bold text-navy">Additional notes <span class="font-normal text-slate-400">(optional)</span></label>
+    <div class="mt-2">{{ form.notes }}</div>
+    <label class="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm"><span class="pt-1">{{ form.backup_confirmed }}</span><span class="text-slate-700">{{ form.backup_confirmed.label }}{% if form.backup_confirmed.errors %}<span class="mt-1 block text-xs text-danger">{{ form.backup_confirmed.errors|join:', ' }}</span>{% endif %}</span></label>
+  </section>
+
+  <div class="flex justify-end"><button class="btn btn-primary px-6" type="submit">Submit self-assessment</button></div>
+</form>
+
+{% if submitted_assessment %}
+<section class="panel mt-6 max-w-5xl p-5 md:p-7">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Diagnostic summary</p><h2 class="mt-1 text-xl font-extrabold text-navy">Assessment report</h2></div>
+    <div class="rounded-lg px-4 py-3 text-center {{ submitted_assessment.health_badge_color }}"><p class="text-2xl font-extrabold">{{ submitted_assessment.overall_score }} / 100</p><p class="text-xs font-bold">{{ submitted_assessment.health_badge_label }}</p></div>
+  </div>
+
+  <div class="mt-6 space-y-4">
+    <div><div class="flex justify-between text-sm"><span>Storage &amp; Speed</span><b>{{ submitted_assessment.storage_speed_score }}/25</b></div><div class="mt-2 h-2 rounded bg-slate-100"><div class="h-2 rounded bg-brand" style="width: {{ submitted_assessment.storage_speed_percentage }}%"></div></div></div>
+    <div><div class="flex justify-between text-sm"><span>Display &amp; Screen</span><b>{{ submitted_assessment.display_screen_score }}/25</b></div><div class="mt-2 h-2 rounded bg-slate-100"><div class="h-2 rounded bg-brand" style="width: {{ submitted_assessment.display_screen_percentage }}%"></div></div></div>
+    <div><div class="flex justify-between text-sm"><span>Battery &amp; Power</span><b>{{ submitted_assessment.battery_power_score }}/20</b></div><div class="mt-2 h-2 rounded bg-slate-100"><div class="h-2 rounded bg-brand" style="width: {{ submitted_assessment.battery_power_percentage }}%"></div></div></div>
+    <div><div class="flex justify-between text-sm"><span>Keyboard &amp; Touchpad</span><b>{{ submitted_assessment.keyboard_touchpad_score }}/15</b></div><div class="mt-2 h-2 rounded bg-slate-100"><div class="h-2 rounded bg-brand" style="width: {{ submitted_assessment.keyboard_touchpad_percentage }}%"></div></div></div>
+    <div><div class="flex justify-between text-sm"><span>Outer Casing / Body</span><b>{{ submitted_assessment.body_chassis_score }}/15</b></div><div class="mt-2 h-2 rounded bg-slate-100"><div class="h-2 rounded bg-brand" style="width: {{ submitted_assessment.body_chassis_percentage }}%"></div></div></div>
+  </div>
+
+  <form method="post" class="mt-6 border-t border-slate-100 pt-5">
+    {% csrf_token %}
+    <input type="hidden" name="assessment_id" value="{{ submitted_assessment.pk }}">
+    <input type="hidden" name="device_id" value="{{ submitted_assessment.device_id }}">
+    <fieldset>
+      <legend class="text-sm font-bold text-navy">What should happen to this laptop?</legend>
+      <div class="mt-3 grid gap-3 md:grid-cols-3">
+        <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4"><input type="radio" name="final_pathway" value="SANITIZATION" {% if submitted_assessment.chosen_pathway == 'SANITIZATION' %}checked{% endif %}><span><span class="block text-sm font-bold">Sanitization</span><span class="mt-1 block text-xs text-slate-500">Securely erase stored data</span></span></label>
+        <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4"><input type="radio" name="final_pathway" value="REPAIR" {% if submitted_assessment.chosen_pathway == 'REPAIR' %}checked{% endif %}><span><span class="block text-sm font-bold">Repair</span><span class="mt-1 block text-xs text-slate-500">Fix hardware or performance issues</span></span></label>
+        <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4"><input type="radio" name="final_pathway" value="BOTH" {% if submitted_assessment.chosen_pathway == 'BOTH' %}checked{% endif %}><span><span class="block text-sm font-bold">Both</span><span class="mt-1 block text-xs text-slate-500">Repair and securely wipe</span></span></label>
+      </div>
+    </fieldset>
+    <div class="mt-5 flex justify-end"><button type="submit" name="confirm_disposition" value="1" class="btn btn-primary">Confirm Service &amp; Proceed</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const form = document.getElementById('self-assessment-form');
+  if (!form) return;
+
+  const glowClasses = ['border-rose-500', 'ring-4', 'ring-rose-500/20', 'bg-rose-50/30'];
+  const cardNumbers = [1, 2, 3, 4, 5];
+
+  cardNumbers.forEach((number) => {
+    const card = document.getElementById(`q_card_${number}`);
+    if (!card) return;
+    const options = card.querySelectorAll('input.question-option');
+
+    options.forEach((option) => {
+      option.addEventListener('change', () => {
+        if (!option.checked) return;
+        options.forEach((sibling) => {
+          if (sibling !== option) sibling.checked = false;
+        });
+        card.classList.remove(...glowClasses);
+
+        const nextCard = document.getElementById(`q_card_${number + 1}`);
+        if (nextCard) {
+          nextCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+    });
+  });
+
+  form.addEventListener('submit', (event) => {
+    cardNumbers.forEach((number) => {
+      const card = document.getElementById(`q_card_${number}`);
+      if (card) card.classList.remove(...glowClasses);
+    });
+
+    const missingCards = [];
+    cardNumbers.forEach((number) => {
+      const card = document.getElementById(`q_card_${number}`);
+      if (!card) return;
+      const selected = card.querySelector('input.question-option:checked');
+      if (!selected) {
+        missingCards.push(card);
+        card.classList.add(...glowClasses);
+      }
+    });
+
+    if (missingCards.length) {
+      event.preventDefault();
+      missingCards[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+})();
+</script>
 {% endblock %}

@@ -1,8 +1,8 @@
+import datetime
 from decimal import Decimal
 
 from django.test import TestCase
 from django.urls import reverse
-from django.utils import timezone
 
 from .forms import DeviceRegistrationForm, OwnerSelfAssessmentForm, RepairEvaluationForm
 from .models import Device, DonationLedger, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment, User
@@ -25,7 +25,8 @@ class WorkflowTests(TestCase):
             "ram_gb": 16,
             "storage_info": "512GB SSD",
             "initial_value_kes": Decimal("100000.00"),
-            "purchase_date": timezone.now(),
+            "purchase_date": datetime.date.today(),
+            "acquisition_period": "2024-03",
         }
         values.update(overrides)
         return Device.objects.create(**values)
@@ -35,6 +36,21 @@ class WorkflowTests(TestCase):
         for name in ("overview", "devices", "assessments", "sanitization", "repairs", "disposition", "profile", "certificates"):
             with self.subTest(page=name):
                 self.assertEqual(self.client.get(reverse(name)).status_code, 200)
+
+    def test_it_assessment_rejects_devices_that_are_no_longer_active(self):
+        self.device.status = Device.Status.FAILED
+        self.device.save(update_fields=["status"])
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("it_assessment", args=[self.device.pk]))
+
+        self.assertRedirects(response, reverse("it_assessments_portal"))
+
+    def test_it_assessment_handles_deleted_or_outdated_device_ids(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("it_assessment", args=[999999]))
+
+        self.assertRedirects(response, reverse("it_assessments_portal"))
 
     def test_manager_pages_render_and_admin_pages_are_denied(self):
         self.client.force_login(self.manager)
@@ -57,29 +73,37 @@ class WorkflowTests(TestCase):
             "ram_gb": 8,
             "storage_info": "256GB SSD",
             "initial_value_kes": "50000.00",
-            "purchase_date": f"{timezone.now():%Y-%m-%dT%H:%M}",
+            "acquisition_month": "03",
+            "acquisition_year": "2024",
         }
         form = DeviceRegistrationForm(data=form_data, owner=self.manager)
         self.assertFalse(form.is_valid())
         self.assertIn("device_name", form.errors)
         self.assertIn("serial_number", form.errors)
 
-    def test_purchase_date_form_accepts_date_and_time(self):
-        purchase_date = timezone.now().replace(second=0, microsecond=0)
+    def test_current_valuation_handles_missing_purchase_date(self):
+        self.device.purchase_date = None
+
+        valuation = self.device.current_net_valuation
+        expected_age = max(0, datetime.date.today().year - 2024)
+        expected = round(max(5000.0, float(self.device.initial_value_kes) * ((1 - 0.15) ** expected_age)), 2)
+        self.assertEqual(valuation, expected)
+
+    def test_acquisition_period_form_accepts_month_and_year(self):
         form = DeviceRegistrationForm(data={
             "device_name": "Work laptop",
             "make": "Dell",
             "model_name": "Latitude",
-            "serial_number": "SERIAL-DATETIME",
+            "serial_number": "SERIAL-MONTH-YEAR",
             "processor": "Intel",
             "ram_gb": 8,
             "storage_info": "256GB SSD",
             "initial_value_kes": "50000.00",
-            "purchase_date": purchase_date.strftime("%Y-%m-%dT%H:%M"),
+            "acquisition_month": "03",
+            "acquisition_year": "2024",
         }, owner=self.manager)
         self.assertTrue(form.is_valid(), form.errors)
-        self.assertEqual(form.cleaned_data["purchase_date"].hour, purchase_date.hour)
-        self.assertEqual(form.cleaned_data["purchase_date"].minute, purchase_date.minute)
+        self.assertEqual(form.cleaned_data["acquisition_period"], "2024-03")
 
     def test_donated_device_is_hidden_from_manager_disposition_choices(self):
         DonationLedger.objects.create(
@@ -94,6 +118,8 @@ class WorkflowTests(TestCase):
         self.assertNotIn(self.device, response.context["devices"])
 
     def test_assessment_lookup_excludes_it_verified_and_donated_devices(self):
+        self.device.status = Device.Status.PENDING_PROCESSING
+        self.device.save(update_fields=["status"])
         self.client.force_login(self.admin)
         response = self.client.get(reverse("assessments"), {"device": self.device.pk})
         self.assertEqual(response.status_code, 200)

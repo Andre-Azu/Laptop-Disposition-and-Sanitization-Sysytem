@@ -1,5 +1,5 @@
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, date
 from io import BytesIO
 import hashlib
 import uuid
@@ -10,14 +10,15 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model, login, logout
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.core.mail import send_mail
 from django.db.models import Q, Sum
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import DeviceRegistrationForm, OwnerSelfAssessmentForm, ProfileForm, RegistrationForm, RepairEvaluationForm, TechnicalAssessmentForm
-from .models import AuditLog, CollectionSlot, Device, DonationLedger, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment
+from .models import AuditLog, CollectionSlot, Device, DonationLedger, ITAssessment, ITAssessmentDraft, ITAssessmentScoringEngine, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment
 
 User = get_user_model()
 
@@ -48,7 +49,7 @@ def home(request):
     if request.user.is_it_admin():
         return redirect("overview")
     devices = Device.objects.filter(owner=request.user)
-    public_inventory = _searched_devices(Device.objects.exclude(owner=request.user).exclude(status__in=[Device.Status.FAILED, Device.Status.DONATED]).select_related("owner"), request.GET.get("q", "").strip())
+    public_inventory = _searched_devices(Device.objects.exclude(owner=request.user).exclude(status__in=[Device.Status.FAILED, Device.Status.DONATED]).select_related("owner", "self_assessment", "technical_assessment"), request.GET.get("q", "").strip())
     reward_total = request.user.donation_rewards.filter(payout_status=DonationLedger.Status.PAID).aggregate(total=Sum("cashback_kes"))["total"] or Decimal("0.00")
     recovered = DonationLedger.objects.filter(payout_status=DonationLedger.Status.PAID).aggregate(total=Sum("donation_value_kes"))["total"] or Decimal("0.00")
     return render(request, "laptops/dashboard.html", {"devices": devices, "inventory": public_inventory, "asset_count": devices.count(), "reward_total": reward_total, "recovered_total": recovered})
@@ -56,7 +57,7 @@ def home(request):
 
 @it_admin_required
 def overview(request):
-    base = _searched_devices(Device.objects.select_related("owner"), request.GET.get("q", "").strip())
+    base = _searched_devices(Device.objects.select_related("owner", "self_assessment", "technical_assessment"), request.GET.get("q", "").strip())
     status_filter = request.GET.get("status", "")
     if status_filter:
         base = base.filter(status=status_filter)
@@ -75,7 +76,7 @@ def overview(request):
 
 @it_admin_required
 def device_inventory(request):
-    devices = _searched_devices(Device.objects.select_related("owner", "self_assessment", "technical_assessment").prefetch_related("audit_logs"), request.GET.get("q", "").strip())
+    devices = _searched_devices(Device.objects.select_related("owner", "self_assessment", "technical_assessment", "it_assessment").prefetch_related("audit_logs"), request.GET.get("q", "").strip())
     component = request.GET.get("component", "")
     condition = request.GET.get("condition", "")
     assessment_component = {"screen": "screen_status", "keyboard": "keyboard_status", "battery": "battery_status", "chassis": "chassis_status", "storage": "storage_status"}.get(component)
@@ -89,37 +90,95 @@ def device_inventory(request):
 
 @login_required
 def register_device(request):
+    current_year = timezone.localdate().year
     form = DeviceRegistrationForm(request.POST or None, owner=request.user)
     if request.method == "POST" and form.is_valid():
+        acquisition_month = form.cleaned_data["acquisition_month"]
+        acquisition_year = form.cleaned_data["acquisition_year"]
+        acquisition_period = f"{acquisition_year}-{acquisition_month}"
+
         device = form.save(commit=False)
         device.owner = request.user
         device.status = Device.Status.REGISTERED
+        device.acquisition_period = acquisition_period
+        device.purchase_date = date(int(acquisition_year), int(acquisition_month), 1)
         device.save()
         record_audit(device, request.user, "Device registered", f"{device.device_name} added to the recovery system.")
         messages.success(request, "Device registered successfully.")
         return redirect("my_devices")
-    return render(request, "laptops/register_device.html", {"form": form, "model_series": dict(Device.MODEL_SERIES)})
+    return render(request, "laptops/device_register.html", {
+        "form": form,
+        "model_series": dict(Device.MODEL_SERIES),
+        "year_range": range(current_year, current_year - 15, -1),
+        "current_year": current_year,
+    })
 
 
 @login_required
 def my_devices(request):
-    devices = Device.objects.filter(owner=request.user).prefetch_related("audit_logs")
+    devices = Device.objects.filter(owner=request.user).select_related("owner", "self_assessment").prefetch_related("audit_logs")
     return render(request, "laptops/my_devices.html", {"devices": devices})
+
+
+@login_required
+def device_detail(request, device_id):
+    device = get_object_or_404(
+        Device.objects.select_related("owner", "self_assessment", "technical_assessment", "it_assessment"),
+        pk=device_id,
+    )
+    if device.owner != request.user and not request.user.is_it_admin():
+        raise PermissionDenied("You do not have access to this device.")
+    return render(request, "laptops/device_detail.html", {"device": device})
 
 
 @it_admin_required
 def assessments(request):
-    terminal_statuses = [Device.Status.IT_VERIFIED, Device.Status.SANITIZED, Device.Status.COMPLETED, Device.Status.DONATED]
-    devices = Device.objects.select_related("owner").exclude(status__in=terminal_statuses)
+    active_devices = Device.objects.filter(
+        status__in=[Device.Status.PENDING_PROCESSING, Device.Status.IT_IN_PROGRESS]
+    ).select_related("owner").order_by("-updated_at")
+    devices = active_devices
+
+    portal_queryset = Device.objects.exclude(
+        status__in=[Device.Status.REGISTERED, Device.Status.SELF_ASSESSED]
+    ).select_related("owner", "it_assessment", "it_assessment_draft")
+
+    portal_devices = []
+    for device in portal_queryset.order_by("-updated_at"):
+        assessment = getattr(device, "it_assessment", None)
+        if device.status in [Device.Status.IT_VERIFIED, Device.Status.SANITIZED, Device.Status.COMPLETED, Device.Status.DONATED] or assessment:
+            category = "completed"
+        elif device.status == Device.Status.IT_IN_PROGRESS:
+            category = "incomplete"
+        else:
+            category = "pending"
+        portal_devices.append({"device": device, "category": category, "assessment": assessment})
+
+    pending_queue = []
+    for device in Device.objects.filter(status=Device.Status.IT_IN_PROGRESS).select_related("owner", "it_assessment_draft"):
+        draft = getattr(device, "it_assessment_draft", None)
+        answers = draft.answers if draft and isinstance(draft.answers, dict) else {}
+        answered = sum(1 for field in ITAssessmentScoringEngine.ALL_FIELDS if field in answers and answers[field])
+        progress = round(min(answered, 55) / 55 * 100)
+        pending_queue.append({"device": device, "progress": progress})
+    pending_queue.sort(key=lambda item: item["progress"], reverse=True)
+
+    counts = {
+        "all": len(portal_devices),
+        "pending": sum(1 for item in portal_devices if item["category"] == "pending"),
+        "incomplete": sum(1 for item in portal_devices if item["category"] == "incomplete"),
+        "completed": sum(1 for item in portal_devices if item["category"] == "completed"),
+    }
+
     selected_id = request.POST.get("device") or request.GET.get("device")
     selected = None
     if selected_id:
         selected = get_object_or_404(Device.objects.select_related("owner"), pk=selected_id)
-        if selected.status in terminal_statuses:
-            messages.warning(request, "IT-verified, donated, completed, or sanitized devices cannot be reassessed.")
+        if selected.status not in [Device.Status.PENDING_PROCESSING, Device.Status.IT_IN_PROGRESS]:
+            messages.warning(request, "Only pending or in-progress devices can be assessed.")
             return redirect("assessments")
     else:
         selected = devices.first()
+
     existing_assessment = TechnicalAssessment.objects.filter(device=selected).first() if selected else None
     form = TechnicalAssessmentForm(request.POST or None, instance=existing_assessment)
     if request.method == "POST" and selected and form.is_valid():
@@ -132,7 +191,177 @@ def assessments(request):
         record_audit(selected, request.user, "Technical assessment completed", "Component condition assessment recorded.")
         messages.success(request, "Assessment saved.")
         return redirect("assessments")
-    return render(request, "laptops/assessments.html", {"devices": devices, "selected": selected, "form": form, "latest_assessments": TechnicalAssessment.objects.select_related("device", "assessed_by").order_by("-created_at")[:15]})
+
+    return render(request, "laptops/it_assessments_portal.html", {
+        "devices": devices,
+        "active_devices": devices,
+        "selected": selected,
+        "form": form,
+        "portal_devices": portal_devices,
+        "pending_queue": pending_queue,
+        "counts": counts,
+        "latest_assessments": TechnicalAssessment.objects.select_related("device", "assessed_by").order_by("-created_at")[:15],
+    })
+
+
+@it_admin_required
+def it_assessment(request, device_id=None):
+    active_devices = Device.objects.filter(status__in=[Device.Status.PENDING_PROCESSING, Device.Status.IT_IN_PROGRESS]).select_related("owner", "it_assessment_draft")
+    if device_id:
+        device = Device.objects.select_related("owner", "it_assessment_draft", "it_assessment").filter(pk=device_id).first()
+        if device is None:
+            messages.warning(request, "That device no longer exists or the link is outdated.")
+            return redirect("it_assessments_portal")
+        if device.status not in [Device.Status.PENDING_PROCESSING, Device.Status.IT_IN_PROGRESS]:
+            messages.warning(request, "Only pending or in-progress devices can be assessed.")
+            return redirect("it_assessments_portal")
+    else:
+        device = active_devices.first()
+    if not device:
+        return render(request, "laptops/it_assessment.html", {"device": None, "modules": [], "active_devices": active_devices, "pending_queue": [], "options": ITAssessmentScoringEngine.OPTIONS})
+    assessment = getattr(device, "it_assessment", None)
+
+    if device.status == Device.Status.PENDING_PROCESSING:
+        device.status = Device.Status.IT_IN_PROGRESS
+        device.save(update_fields=["status", "updated_at"])
+
+    pending_queue = []
+    for queue_device in active_devices:
+        queue_draft = getattr(queue_device, "it_assessment_draft", None)
+        answers = queue_draft.answers if queue_draft and isinstance(queue_draft.answers, dict) else {}
+        answer_count = sum(1 for field in ITAssessmentScoringEngine.ALL_FIELDS if field in answers and answers[field])
+        progress = round(min(answer_count, 55) / 55 * 100)
+        pending_queue.append({"device": queue_device, "progress": progress})
+    pending_queue.sort(key=lambda item: item["progress"], reverse=True)
+    draft = getattr(device, "it_assessment_draft", None)
+    legacy_answer_map = {
+        "GOOD": "GOOD", "Good / Working": "GOOD", "Working / Good": "GOOD",
+        "SOMEWHAT": "SOMEWHAT", "Somewhat Working": "SOMEWHAT", "Intermittent": "SOMEWHAT", "Not Tested": "SOMEWHAT",
+        "POOR": "POOR", "Bad / Spoilt": "POOR", "Poor / Spoilt": "POOR",
+        "NOT_AVAILABLE": "NOT_AVAILABLE", "Not Available": "NOT_AVAILABLE",
+    }
+    initial_answers = draft.answers if draft else {}
+    initial_answers = {field: legacy_answer_map.get(value, value) for field, value in initial_answers.items()}
+    if assessment:
+        initial_answers = {field: getattr(assessment, field, "") for field in ITAssessmentScoringEngine.ALL_FIELDS if getattr(assessment, field, "")}
+        if draft and draft.answers:
+            initial_answers.update(draft.answers)
+
+    score_assessment = ITAssessment(device=device)
+    for field_name, answer in initial_answers.items():
+        if hasattr(score_assessment, field_name):
+            setattr(score_assessment, field_name, answer)
+    verified_score = score_assessment.overall_score
+
+    if request.method == "POST":
+        answer_map = {
+            "GOOD": "GOOD", "Good / Working": "GOOD", "Working / Good": "GOOD",
+            "SOMEWHAT": "SOMEWHAT", "Somewhat Working": "SOMEWHAT", "Intermittent": "SOMEWHAT", "Not Tested": "SOMEWHAT",
+            "POOR": "POOR", "Bad / Spoilt": "POOR", "Poor / Spoilt": "POOR",
+            "NOT_AVAILABLE": "NOT_AVAILABLE", "Not Available": "NOT_AVAILABLE",
+        }
+        answers = {field: answer_map.get(request.POST.get(field, "").strip(), request.POST.get(field, "").strip()) for field in ITAssessmentScoringEngine.ALL_FIELDS}
+        missing = [field for field, value in answers.items() if not value]
+        valid_choices = {value for value, _label in ITAssessmentScoringEngine.OPTIONS}
+        invalid = [field for field, value in answers.items() if value and value not in valid_choices]
+        if missing or invalid:
+            messages.error(request, "Please answer every question. Questions marked Not Available are still considered answered.")
+            ITAssessmentDraft.objects.update_or_create(device=device, defaults={"answers": answers, "updated_by": request.user})
+        else:
+            assessment, _created = ITAssessment.objects.update_or_create(
+                device=device,
+                defaults={**answers, "assessed_by": request.user, "notes": request.POST.get("notes", "")},
+            )
+            assessment.completed_at = timezone.now()
+            assessment.save(update_fields=["completed_at", "updated_at"])
+            ITAssessmentDraft.objects.filter(device=device).delete()
+            device.status = Device.Status.IT_VERIFIED
+            device.save(update_fields=["status", "updated_at"])
+
+            if device.owner.email:
+                send_mail(
+                    subject=f"Verified IT Assessment Report - {device.device_name}",
+                    message=(
+                        f"Dear {device.owner.get_full_name() or device.owner.username},\n\n"
+                        f"The verified IT audit report for {device.device_name} is complete.\n"
+                        f"Overall Verified IT Score: {assessment.overall_score:.1f} / 100\n"
+                        f"Rating: {assessment.rating_label}\n"
+                    ),
+                    from_email=None,
+                    recipient_list=[device.owner.email],
+                    fail_silently=False,
+                )
+
+            record_audit(device, request.user, "IT admin assessment complete", assessment.rating_label)
+            messages.success(request, "IT verification assessment completed and submitted to the Assessments tab.")
+            return redirect("it_assessments_portal")
+        initial_answers = answers
+        score_assessment = ITAssessment(device=device)
+        for field_name, answer in initial_answers.items():
+            if hasattr(score_assessment, field_name):
+                setattr(score_assessment, field_name, answer)
+        verified_score = score_assessment.overall_score
+
+    owner_assessment = getattr(device, "self_assessment", None)
+    if owner_assessment:
+        disposition_pathway = owner_assessment.get_chosen_pathway_display()
+    elif verified_score >= 65:
+        disposition_pathway = "Repair & Sanitization" if verified_score < 85 else "Sanitization & Wiping"
+    else:
+        disposition_pathway = "Repair & Sanitization"
+
+    modules = []
+    question_number = 1
+    for module_name, (weight, questions) in ITAssessmentScoringEngine.MODULES.items():
+        module_questions = [
+            (field, label, question_number + offset, initial_answers.get(field, ""))
+            for offset, (field, label) in enumerate(questions.items())
+        ]
+        question_number += len(questions)
+        modules.append({"name": module_name, "weight": weight, "questions": module_questions})
+    return render(request, "laptops/it_assessment.html", {
+        "device": device,
+        "assessment": assessment,
+        "draft_answers": initial_answers,
+        "modules": modules,
+        "options": ITAssessmentScoringEngine.OPTIONS,
+        "engine": ITAssessmentScoringEngine,
+        "verified_score": verified_score,
+        "disposition_pathway": disposition_pathway,
+        "active_devices": active_devices,
+        "pending_queue": pending_queue,
+    })
+
+
+@it_admin_required
+def save_it_assessment_draft(request, device_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    device = get_object_or_404(Device, pk=device_id)
+    import json
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        payload = request.POST.dict()
+    answers = payload.get("answers", payload)
+    valid_fields = set(ITAssessmentScoringEngine.ALL_FIELDS)
+    valid_answers = {value for value, _label in ITAssessmentScoringEngine.OPTIONS} | {label for _value, label in ITAssessmentScoringEngine.OPTIONS} | {"GOOD", "SOMEWHAT", "POOR", "BAD", "NOT_AVAILABLE", "Intermittent", "Not Tested", "Good / Working", "Bad / Spoilt"}
+    answer_map = {"Working / Good": "GOOD", "Good / Working": "GOOD", "Somewhat Working": "SOMEWHAT", "Intermittent": "SOMEWHAT", "Not Tested": "SOMEWHAT", "Poor / Spoilt": "POOR", "Bad / Spoilt": "POOR", "Not Available": "NOT_AVAILABLE", "GOOD": "GOOD", "SOMEWHAT": "SOMEWHAT", "POOR": "POOR", "NOT_AVAILABLE": "NOT_AVAILABLE"}
+    clean_answers = {
+        key: answer_map.get(value, value)
+        for key, value in answers.items()
+        if key in valid_fields and value in valid_answers
+    }
+    draft, _created = ITAssessmentDraft.objects.get_or_create(device=device, defaults={"updated_by": request.user})
+    current = draft.answers if isinstance(draft.answers, dict) else {}
+    current.update(clean_answers)
+    for key, value in list(payload.items()):
+        if key.endswith("__clear") and key[:-7] in valid_fields:
+            current.pop(key[:-7], None)
+    draft.answers = current
+    draft.updated_by = request.user
+    draft.save(update_fields=["answers", "updated_by", "updated_at"])
+    return JsonResponse({"saved": True, "answered": len(current), "total": 55})
 
 
 @it_admin_required
@@ -342,27 +571,73 @@ def admin_access_decision(request, user_id, decision):
 
 
 @login_required
+def user_assessments_tab(request):
+    devices = (
+        Device.objects.filter(owner=request.user)
+        .exclude(status=Device.Status.REGISTERED)
+        .select_related("owner", "self_assessment", "it_assessment")
+        .order_by("-updated_at")
+    )
+    return render(request, "laptops/user_assessments.html", {"devices": devices})
+
+
+@login_required
 def self_assessment(request):
-    initial = {"device": request.GET.get("device")} if request.GET.get("device") else None
-    form = OwnerSelfAssessmentForm(request.POST or None, user=request.user, initial=initial)
-    if request.method == "POST" and form.is_valid():
-        assessment = form.save(commit=False)
-        device = assessment.device
-        OwnerSelfAssessment.objects.update_or_create(device=device, defaults={
-            "screen_status": assessment.screen_status,
-            "keyboard_status": assessment.keyboard_status,
-            "battery_status": assessment.battery_status,
-            "chassis_status": assessment.chassis_status,
-            "storage_status": assessment.storage_status,
-            "chosen_pathway": assessment.chosen_pathway,
-            "notes": assessment.notes,
-        })
-        device.status = Device.Status.SELF_ASSESSED
-        device.save(update_fields=["status", "updated_at"])
-        record_audit(device, request.user, "Owner self-assessment submitted", f"Selected pathway: {assessment.chosen_pathway}.")
-        messages.success(request, "Self-assessment submitted. Your device is in the relevant service queue.")
+    confirming = request.method == "POST" and any((
+        request.POST.get("confirm_disposition"),
+        request.POST.get("confirm_pathway"),
+        request.POST.get("confirm_service_pathway"),
+        request.POST.get("confirm"),
+        request.POST.get("action") == "confirm",
+    ))
+    if confirming:
+        assessment_id = request.POST.get("assessment_id")
+        assessment = get_object_or_404(
+            OwnerSelfAssessment.objects.select_related("device"),
+            pk=assessment_id,
+            device__owner=request.user,
+        )
+        final_pathway = request.POST.get("final_pathway") or request.POST.get("confirmed_pathway") or request.POST.get("pathway")
+        if final_pathway in dict(OwnerSelfAssessment.PATHWAY_CHOICES):
+            assessment.chosen_pathway = final_pathway
+            assessment.save(update_fields=["chosen_pathway"])
+        messages.success(request, "Service decision confirmed. Your device has been submitted to IT.")
         return redirect("my_devices")
-    return render(request, "laptops/self_assessment.html", {"form": form})
+
+    initial_device_id = request.GET.get("device") or request.POST.get("device")
+    initial = {"device": initial_device_id} if initial_device_id else None
+    form = OwnerSelfAssessmentForm(request.POST or None, user=request.user, initial=initial)
+    submitted_assessment = None
+
+    if request.method == "POST" and form.is_valid():
+        submitted = form.save(commit=False)
+        device = submitted.device
+        if device.owner_id != request.user.id or device.status != Device.Status.REGISTERED:
+            form.add_error("device", "Select a registered device that you own.")
+        else:
+            assessment, _created = OwnerSelfAssessment.objects.update_or_create(device=device, defaults={
+                "screen_status": submitted.screen_status,
+                "keyboard_status": submitted.keyboard_status,
+                "battery_status": submitted.battery_status,
+                "chassis_status": submitted.chassis_status,
+                "storage_status": submitted.storage_status,
+                "chosen_pathway": submitted.chosen_pathway,
+                "notes": submitted.notes,
+            })
+            device.status = Device.Status.PENDING_PROCESSING
+            device.save(update_fields=["status", "updated_at"])
+            record_audit(device, request.user, "Self-assessment submitted by owner", "Self-assessment submitted by owner")
+            submitted_assessment = assessment
+
+    elif request.method == "GET" and initial_device_id:
+        device = Device.objects.filter(pk=initial_device_id, owner=request.user).select_related("self_assessment").first()
+        if device and hasattr(device, "self_assessment"):
+            submitted_assessment = device.self_assessment
+
+    return render(request, "laptops/self_assessment.html", {
+        "form": form,
+        "submitted_assessment": submitted_assessment,
+    })
 
 
 def sign_in(request):

@@ -1,3 +1,5 @@
+import datetime
+
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm
@@ -27,17 +29,20 @@ class RegistrationForm(UserCreationForm):
 
 class DeviceRegistrationForm(forms.ModelForm):
     model_name = forms.ChoiceField(choices=(), required=True)
-    purchase_date = forms.DateTimeField(
-        label="Purchase date and time",
-        input_formats=["%Y-%m-%dT%H:%M"],
-        widget=forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}),
+    acquisition_month = forms.ChoiceField(
+        choices=[(f"{month:02d}", f"{month:02d}") for month in range(1, 13)],
+        required=True,
+        widget=forms.HiddenInput(),
     )
+    acquisition_year = forms.ChoiceField(choices=(), required=True, widget=forms.HiddenInput())
+    acquisition_period = forms.CharField(required=False, widget=forms.HiddenInput())
 
     class Meta:
         model = Device
         fields = (
             "device_name", "make", "model_name", "serial_number", "processor",
-            "ram_gb", "storage_info", "initial_value_kes", "purchase_date",
+            "ram_gb", "storage_info", "initial_value_kes", "acquisition_month",
+            "acquisition_year", "acquisition_period",
         )
         widgets = {"initial_value_kes": forms.NumberInput(attrs={"step": "0.01", "min": "0"})}
 
@@ -48,6 +53,9 @@ class DeviceRegistrationForm(forms.ModelForm):
             self.instance.owner = owner
         make = self.data.get(self.add_prefix("make")) or self.initial.get("make") or getattr(self.instance, "make", "")
         self.fields["model_name"].choices = [("", "Choose a model series")] + list(dict(Device.MODEL_SERIES).get(make, ()))
+        current_year = timezone.localdate().year
+        self.fields["acquisition_year"].choices = [(str(year), str(year)) for year in range(current_year, current_year - 16, -1)]
+        self.fields["acquisition_year"].widget.attrs["max_length"] = None
 
     def clean_device_name(self):
         name = self.cleaned_data["device_name"].strip()
@@ -75,9 +83,17 @@ class DeviceRegistrationForm(forms.ModelForm):
         allowed_models = dict(Device.MODEL_SERIES).get(make, ())
         if model and model not in dict(allowed_models):
             self.add_error("model_name", "Choose a model series for the selected manufacturer.")
-        purchase_date = cleaned.get("purchase_date")
-        if purchase_date and purchase_date > timezone.now():
-            self.add_error("purchase_date", "Purchase date and time cannot be in the future.")
+
+        month = cleaned.get("acquisition_month")
+        year = cleaned.get("acquisition_year")
+        if month and year:
+            period = f"{year}-{month}"
+            period_date = datetime.date(int(year), int(month), 1)
+            today = timezone.localdate()
+            if period_date > today.replace(day=1):
+                self.add_error("acquisition_month", "Purchase month and year cannot be in the future.")
+            else:
+                cleaned["acquisition_period"] = period
         return cleaned
 
 
@@ -93,7 +109,16 @@ class OwnerSelfAssessmentForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         if user is not None:
-            self.fields["device"].queryset = Device.objects.filter(owner=user)
+            self.fields["device"].queryset = Device.objects.filter(owner=user, status=Device.Status.REGISTERED)
+        labels = {
+            "screen_status": "Display & Screen",
+            "battery_status": "Battery & Power",
+            "keyboard_status": "Keyboard & Touchpad",
+            "storage_status": "Storage & System Speed",
+            "chassis_status": "Outer Casing / Body",
+        }
+        for field_name, label in labels.items():
+            self.fields[field_name].label = label
 
 
 class TechnicalAssessmentForm(forms.ModelForm):

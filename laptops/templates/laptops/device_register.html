@@ -1,0 +1,55 @@
+{% extends 'laptops/base.html' %}
+{% block title %}Register device | Strathmore Laptop Recovery{% endblock %}
+{% block content %}
+<div class="mb-6"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">My devices / Registration</p><h1 class="mt-2 text-3xl font-extrabold">Register a laptop</h1><p class="mt-1 text-sm text-slate-500">Give your device a nickname and record its specifications.</p></div>
+<form method="post" class="panel max-w-4xl p-5 md:p-7">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="mb-4 rounded bg-red-50 p-3 text-sm text-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
+    {% for field in form %}
+      {% if field.name != 'acquisition_month' and field.name != 'acquisition_year' and field.name != 'acquisition_period' %}
+        <label class="block"><span class="mb-1 block text-xs font-bold">{% if field.name == 'device_name' %}Device name (give your device a nickname){% else %}{{ field.label }}{% endif %}</span>{{ field }}{% if field.help_text %}<span class="mt-1 block text-xs font-normal text-slate-500">{{ field.help_text }}</span>{% endif %}{% if field.errors %}<span class="mt-1 block text-xs text-danger">{{ field.errors|join:', ' }}</span>{% endif %}</label>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <fieldset class="mt-5 border-t border-slate-100 pt-5">
+    <legend class="mb-1 text-xs font-bold">Acquisition month and year</legend>
+    <div class="grid max-w-xl grid-cols-2 gap-4">
+      <label class="block text-xs font-bold">Month
+        <select id="id_acquisition_month" name="acquisition_month" class="mt-1" required>
+          <option value="">Select month</option>
+          <option value="01" {% if request.POST.acquisition_month == '01' %}selected{% endif %}>01 - January</option>
+          <option value="02" {% if request.POST.acquisition_month == '02' %}selected{% endif %}>02 - February</option>
+          <option value="03" {% if request.POST.acquisition_month == '03' %}selected{% endif %}>03 - March</option>
+          <option value="04" {% if request.POST.acquisition_month == '04' %}selected{% endif %}>04 - April</option>
+          <option value="05" {% if request.POST.acquisition_month == '05' %}selected{% endif %}>05 - May</option>
+          <option value="06" {% if request.POST.acquisition_month == '06' %}selected{% endif %}>06 - June</option>
+          <option value="07" {% if request.POST.acquisition_month == '07' %}selected{% endif %}>07 - July</option>
+          <option value="08" {% if request.POST.acquisition_month == '08' %}selected{% endif %}>08 - August</option>
+          <option value="09" {% if request.POST.acquisition_month == '09' %}selected{% endif %}>09 - September</option>
+          <option value="10" {% if request.POST.acquisition_month == '10' %}selected{% endif %}>10 - October</option>
+          <option value="11" {% if request.POST.acquisition_month == '11' %}selected{% endif %}>11 - November</option>
+          <option value="12" {% if request.POST.acquisition_month == '12' %}selected{% endif %}>12 - December</option>
+        </select>
+      </label>
+      <label class="block text-xs font-bold">Year
+        <select id="id_acquisition_year" name="acquisition_year" class="mt-1" required>
+          <option value="">Select year</option>
+          {% for year in year_range %}<option value="{{ year }}" {% if request.POST.acquisition_year == year|stringformat:'s' %}selected{% endif %}>{{ year }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    {% if form.acquisition_month.errors %}<p class="mt-2 text-xs text-danger">{{ form.acquisition_month.errors|join:', ' }}</p>{% endif %}
+    {% if form.acquisition_year.errors %}<p class="mt-1 text-xs text-danger">{{ form.acquisition_year.errors|join:', ' }}</p>{% endif %}
+  </fieldset>
+
+  <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5"><p class="max-w-xl text-xs leading-5 text-slate-500">Purchase value is private and used for depreciation and donation valuation only.</p><div class="flex gap-2"><a href="{% url 'my_devices' %}" class="btn btn-light">Cancel</a><button class="btn btn-primary">Save device</button></div></div>
+</form>
+{{ model_series|json_script:'model-series-data' }}
+{% endblock %}
+{% block scripts %}<script>
+const manufacturerSelect=document.getElementById('id_make');const modelSelect=document.getElementById('id_model_name');const modelSeries=JSON.parse(document.getElementById('model-series-data').textContent);
+function updateModels(){const current=modelSelect.value;modelSelect.replaceChildren(new Option('Choose a model series',''));for(const [value,label] of (modelSeries[manufacturerSelect.value]||[])){modelSelect.add(new Option(label,value))}if([...modelSelect.options].some(option=>option.value===current))modelSelect.value=current}
+manufacturerSelect.addEventListener('change',updateModels);updateModels();
+</script>{% endblock %}
