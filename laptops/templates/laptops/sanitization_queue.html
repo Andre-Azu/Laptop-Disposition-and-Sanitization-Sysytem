@@ -1,0 +1,31 @@
+{% extends 'laptops/base.html' %}
+{% block title %}Sanitization Queue | Strathmore Laptop Recovery{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Operations / Data security</p>
+  <h1 class="mt-2 text-3xl font-extrabold">Sanitization Queue</h1>
+</div>
+<div class="space-y-4">
+  {% for device in devices %}
+  <article class="panel overflow-hidden">
+    <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div><p class="text-xs font-bold uppercase text-brand">{{ device.device_name }} · {{ device.owner.get_full_name|default:device.owner.username }}</p><h2 class="mt-1 text-lg font-extrabold">{{ device.make }} {{ device.model_name }}</h2></div>
+      <span class="badge bg-slate-100 text-slate-600">{{ device.get_status_display }}</span>
+    </div>
+    <div class="px-5 py-5">
+      {% if device.status == 'IT_Admin_assesment_complete' or device.status == 'Sanitization_Processing' or device.status == 'Repair_Processing' %}
+      <div class="flex justify-end"><a href="{% url 'sanitization_execution' device.pk %}" class="btn btn-primary">Carry out sanitization</a></div>
+      {% else %}
+      <section class="rounded-xl border border-slate-200 bg-slate-50 p-5 text-center">
+        <h2 class="text-lg font-extrabold text-navy">Cannot be sanitized before assessment</h2>
+        <p class="mt-2 text-sm text-slate-600">this device is awaiting assesment</p>
+        <a href="{% url 'it_assessment_detail' device.pk %}" class="btn btn-primary mt-4">Go to IT Assessment →</a>
+      </section>
+      {% endif %}
+    </div>
+  </article>
+  {% empty %}
+  <div class="panel p-12 text-center"><p class="text-lg font-bold">Queue is clear</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

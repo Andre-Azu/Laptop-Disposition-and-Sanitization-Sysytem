@@ -5,7 +5,8 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .forms import DeviceRegistrationForm, OwnerSelfAssessmentForm, RepairEvaluationForm
-from .models import Device, DonationLedger, ITAssessment, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment, User
+from .models import AuditLog, Device, DonationLedger, ITAssessment, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment, User
+from .utils import calculate_device_valuation, format_kes
 
 
 class WorkflowTests(TestCase):
@@ -33,7 +34,7 @@ class WorkflowTests(TestCase):
 
     def test_admin_pages_render_for_approved_admin(self):
         self.client.force_login(self.admin)
-        for name in ("overview", "devices", "assessments", "sanitization", "repairs", "disposition", "profile", "certificates"):
+        for name in ("overview", "devices", "assessments", "sanitization", "repairs", "disposition", "profile"):
             with self.subTest(page=name):
                 self.assertEqual(self.client.get(reverse(name)).status_code, 200)
 
@@ -337,3 +338,92 @@ class WorkflowTests(TestCase):
         self.client.force_login(self.admin)
         response = self.client.get(reverse("overview"))
         self.assertEqual(response.context["ewaste_recovered"], Decimal("100000"))
+
+    def test_overview_disbursement_view_info_marks_paid(self):
+        ledger = DonationLedger.objects.create(
+            device=self.device,
+            donated_by=self.manager,
+            donation_value_kes=Decimal("100000"),
+            cashback_kes=Decimal("3000"),
+            payout_status=DonationLedger.Status.APPROVED,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("overview") + "?status=awaiting_disbursement")
+        self.assertContains(response, "View info")
+        self.assertContains(response, "Marked paid")
+        self.assertContains(response, "Repair &amp; sanitization")
+
+        response = self.client.post(reverse("overview"), {
+            "action": "mark_disbursement_paid",
+            "entry": ledger.pk,
+        })
+        self.assertEqual(response.status_code, 302)
+        ledger.refresh_from_db()
+        self.assertEqual(ledger.payout_status, DonationLedger.Status.PAID)
+        self.assertTrue(AuditLog.objects.filter(device=self.device, action_stage="Disbursement paid").exists())
+
+    def test_weighted_valuation_cap_and_cashback(self):
+        RepairEvaluation.objects.create(
+            device=self.device,
+            technician=self.admin,
+            component_name="Motherboard",
+            repair_result="FIXED",
+            comments="Restored",
+        )
+        valuation = calculate_device_valuation(self.device)
+        self.assertEqual(valuation["acquired_value"], Decimal("100000.00"))
+        self.assertEqual(valuation["current_value"], Decimal("75000.00"))
+        self.assertEqual(valuation["cashback_amount"], Decimal("2250.00"))
+
+    def test_disposition_approval_sets_device_flag_and_audit(self):
+        ledger = DonationLedger.objects.create(
+            device=self.device,
+            donated_by=self.manager,
+            donation_value_kes=Decimal("75000"),
+            cashback_kes=Decimal("2250"),
+            payout_status=DonationLedger.Status.PENDING,
+        )
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("disposition"), {
+            "action": "approve_donation",
+            "entry": ledger.pk,
+        })
+        self.assertEqual(response.status_code, 302)
+        ledger.refresh_from_db()
+        self.device.refresh_from_db()
+        self.assertEqual(ledger.payout_status, DonationLedger.Status.APPROVED)
+        self.assertTrue(self.device.disbursement_approved)
+        self.assertTrue(AuditLog.objects.filter(device=self.device, action_stage="Donation APPROVED").exists())
+
+    def test_disposition_rejection_saves_optional_reason(self):
+        ledger = DonationLedger.objects.create(
+            device=self.device,
+            donated_by=self.manager,
+            donation_value_kes=Decimal("75000"),
+            cashback_kes=Decimal("2250"),
+            payout_status=DonationLedger.Status.PENDING,
+        )
+        self.client.force_login(self.admin)
+        self.client.post(reverse("disposition"), {
+            "action": "reject_donation",
+            "entry": ledger.pk,
+            "rejection_reason": "Valuation requires review",
+        })
+        ledger.refresh_from_db()
+        self.assertEqual(ledger.payout_status, DonationLedger.Status.REJECTED)
+        self.assertEqual(ledger.rejection_reason, "Valuation requires review")
+
+    def test_device_manager_sees_rejected_disbursement(self):
+        ledger = DonationLedger.objects.create(
+            device=self.device,
+            donated_by=self.manager,
+            donation_value_kes=Decimal("75000"),
+            cashback_kes=Decimal("2250"),
+            payout_status=DonationLedger.Status.REJECTED,
+            rejection_reason="Valuation requires review",
+        )
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("disposition"))
+        self.assertContains(response, "Disbursement not accepted")
+        self.assertContains(response, "Valuation requires review")

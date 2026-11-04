@@ -1,0 +1,45 @@
+{% extends 'laptops/base.html' %}
+{% block title %}Sanitization Workstation{% endblock %}
+{% block content %}
+<div class="mb-6 rounded-xl bg-navy px-5 py-4 text-white">
+  <p class="text-xs font-bold uppercase tracking-[.16em] text-brand-light">Sanitization workstation</p>
+  <h1 class="mt-1 text-2xl font-extrabold">{{ device.device_name }}</h1>
+  <p class="mt-1 text-sm text-slate-200">Sanitized by IT Admin: {{ request.user.get_full_name|default:request.user.username }}</p>
+</div>
+<form method="post" class="panel space-y-5 p-5 md:p-6">
+  {% csrf_token %}
+  <div class="grid gap-4 md:grid-cols-2">
+    <label class="text-xs font-bold uppercase text-slate-500">Sanitization Standard / Mode
+      <select name="sanitization_standard" class="field mt-2" required>
+        <option value="">Select standard</option>
+        {% for option in standards %}<option value="{{ option }}" {% if posted.sanitization_standard == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="text-xs font-bold uppercase text-slate-500">Tool Used
+      <select name="tool_used" class="field mt-2" required>
+        <option value="">Select tool</option>
+        {% for option in tools %}<option value="{{ option }}" {% if posted.tool_used == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="text-xs font-bold uppercase text-slate-500">Pass Count
+      <select name="pass_count" class="field mt-2" required>
+        <option value="">Select pass count</option>
+        {% for option in pass_counts %}<option value="{{ option }}" {% if posted.pass_count == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="text-xs font-bold uppercase text-slate-500">Drive Serial Number
+      <input name="drive_serial_number" value="{{ posted.drive_serial_number }}" class="field mt-2" required>
+    </label>
+    <label class="text-xs font-bold uppercase text-slate-500 md:col-span-2">Storage Media Type
+      <input name="storage_media_type" value="{{ posted.storage_media_type }}" class="field mt-2" required>
+    </label>
+    <label class="text-xs font-bold uppercase text-slate-500 md:col-span-2">Technician Evaluation Notes
+      <textarea name="technician_notes" rows="4" class="field mt-2">{{ posted.technician_notes }}</textarea>
+    </label>
+  </div>
+  <div class="flex flex-wrap justify-end gap-3">
+    <button type="submit" name="action" value="FAIL" formnovalidate class="btn btn-danger">FAIL SANITIZATION</button>
+    <button type="submit" name="action" value="PASS" class="btn bg-forest text-white">GENERATE SANITIZATION CERTIFICATE &amp; COMPLETE</button>
+  </div>
+</form>
+{% endblock %}

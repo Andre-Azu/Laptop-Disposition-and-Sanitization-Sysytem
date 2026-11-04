@@ -34,6 +34,9 @@ class Device(models.Model):
         PENDING_ADMIN_ASSESMENT = "PENDING_Admin_assesment", "Pending IT Admin Assessment"
         IT_ADMIN_ASSESMENT_IN_PROGRESS = "IT_ADMIN_ASSESMENT_IN_PROGRESS", "IT Assessment In Progress"
         IT_ADMIN_ASSESMENT_COMPLETE = "IT_Admin_assesment_complete", "IT Assessment Complete"
+        SANITIZATION_PROCESSING = "Sanitization_Processing", "Sanitization Processing"
+        REPAIR_PROCESSING = "Repair_Processing", "Repair Processing"
+        REPAIR_AND_SANITIZATION_PENDING = "REPAIR_AND_SANITIZATION_PENDING", "Repair and Sanitization Pending"
         SCHEDULED_FOR_COLLECTION = "SCHEDULED_FOR_COLLECTION", "Scheduled for Collection"
         COLLECTED = "COLLECTED", "Collected"
         DONATED = "DONATED", "Donated"
@@ -43,10 +46,13 @@ class Device(models.Model):
         ('PENDING_Admin_assesment', 'Pending IT Admin Assessment'),
         ('IT_ADMIN_ASSESMENT_IN_PROGRESS', 'IT Assessment In Progress'),
         ('IT_Admin_assesment_complete', 'IT Assessment Complete'),
+        ('Sanitization_Processing', 'Sanitization Processing'),
+        ('Repair_Processing', 'Repair Processing'),
+        ('REPAIR_AND_SANITIZATION_PENDING', 'Repair and Sanitization Pending'),
         ('SCHEDULED_FOR_COLLECTION', 'Scheduled for Collection'),
         ('COLLECTED', 'Collected'),
-        ('SANITIZATION_FAILED', 'SANITIZATION_FAILED'),
-        ('FAILED', 'FAILED'),
+        ('SANITIZATION_FAILED', 'Sanitization Failed'),
+        ('FAILED', 'Repair Failed'),
         ('SANITIZED', 'SANITIZED'),
         ('COMPLETED', 'Completed'),
         ('DONATED', 'Donated'),
@@ -98,8 +104,11 @@ class Device(models.Model):
     initial_value_kes = models.DecimalField(max_digits=10, decimal_places=2, default=50000.00)
     purchase_date = models.DateField(default=datetime.date.today)
     acquisition_period = models.CharField(max_length=7, blank=True, default="", help_text="Purchase month and year in YYYY-MM format")
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="REGISTERED")
+    status = models.CharField(max_length=40, choices=STATUS_CHOICES, default="REGISTERED")
+    repair_tag = models.CharField(max_length=20, blank=True, default="")
+    sanitization_tag = models.CharField(max_length=20, blank=True, default="")
     failure_notes = models.TextField(blank=True, null=True)
+    disbursement_approved = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -434,6 +443,12 @@ class SanitizationCertificate(models.Model):
     device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="certificate")
     verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     wipe_method = models.CharField(max_length=100, default="DoD 5220.22-M 3-Pass Overwrite")
+    sanitization_standard = models.CharField(max_length=100, blank=True, default="")
+    tool_used = models.CharField(max_length=100, blank=True, default="")
+    pass_count = models.CharField(max_length=20, blank=True, default="")
+    drive_serial_number = models.CharField(max_length=100, blank=True, default="")
+    storage_media_type = models.CharField(max_length=100, blank=True, default="")
+    technician_notes = models.TextField(blank=True, default="")
     crypto_hash = models.CharField(max_length=64, default="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
     issued_at = models.DateTimeField(auto_now_add=True)
 
@@ -461,6 +476,7 @@ class DonationLedger(models.Model):
     cashback_kes = models.DecimalField(max_digits=10, decimal_places=2)
     payout_status = models.CharField(max_length=20, choices=Status.choices, default=Status.PAID)
     transaction_ref = models.CharField(max_length=50, default="MPESA-MOCK-TXN")
+    rejection_reason = models.TextField(blank=True, default="")
     donated_at = models.DateTimeField(auto_now_add=True)
 
 
@@ -470,3 +486,6 @@ class AuditLog(models.Model):
     action_stage = models.CharField(max_length=50, default="REGISTERED")
     description = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-timestamp", "-pk"]

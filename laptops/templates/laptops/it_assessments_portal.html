@@ -10,10 +10,10 @@
 </div>
 
 <div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-  <button type="button" class="kpi-filter panel cursor-pointer text-left p-4 ring-2 ring-brand" data-filter="all" aria-pressed="true"><p class="text-xs font-bold text-slate-500">All Assessments</p><p class="mt-1 text-2xl font-extrabold text-navy">{{ counts.all }}</p></button>
-  <button type="button" class="kpi-filter panel cursor-pointer text-left p-4" data-filter="pending" aria-pressed="false"><p class="text-xs font-bold text-slate-500">Pending Assessments</p><p class="mt-1 text-2xl font-extrabold text-amber-600">{{ counts.pending }}</p></button>
-  <button type="button" class="kpi-filter panel cursor-pointer text-left p-4" data-filter="incomplete" aria-pressed="false"><p class="text-xs font-bold text-slate-500">Incomplete Assessments</p><p class="mt-1 text-2xl font-extrabold text-brand">{{ counts.incomplete }}</p></button>
-  <button type="button" class="kpi-filter panel cursor-pointer text-left p-4" data-filter="completed" aria-pressed="false"><p class="text-xs font-bold text-slate-500">Completed Assessments</p><p class="mt-1 text-2xl font-extrabold text-emerald-600">{{ counts.completed }}</p></button>
+  <button type="button" class="kpi-filter panel cursor-pointer text-left p-4 transition hover:border-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand {% if initial_filter == 'all' %}ring-2 ring-brand{% endif %}" data-filter="all" aria-pressed="{% if initial_filter == 'all' %}true{% else %}false{% endif %}"><p class="text-xs font-bold text-slate-500">All Assessments</p><p class="mt-1 text-2xl font-extrabold text-navy">{{ counts.all }}</p></button>
+  <button type="button" class="kpi-filter panel cursor-pointer text-left p-4 transition hover:border-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand {% if initial_filter == 'pending' %}ring-2 ring-brand{% endif %}" data-filter="pending" aria-pressed="{% if initial_filter == 'pending' %}true{% else %}false{% endif %}"><p class="text-xs font-bold text-slate-500">Pending Assessments</p><p class="mt-1 text-2xl font-extrabold text-amber-600">{{ counts.pending }}</p></button>
+  <button type="button" class="kpi-filter panel cursor-pointer text-left p-4 transition hover:border-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand {% if initial_filter == 'incomplete' %}ring-2 ring-brand{% endif %}" data-filter="incomplete" aria-pressed="{% if initial_filter == 'incomplete' %}true{% else %}false{% endif %}"><p class="text-xs font-bold text-slate-500">Incomplete Assessments</p><p class="mt-1 text-2xl font-extrabold text-brand">{{ counts.incomplete }}</p></button>
+  <button type="button" class="kpi-filter panel cursor-pointer text-left p-4 transition hover:border-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand {% if initial_filter == 'completed' %}ring-2 ring-brand{% endif %}" data-filter="completed" aria-pressed="{% if initial_filter == 'completed' %}true{% else %}false{% endif %}"><p class="text-xs font-bold text-slate-500">Completed Assessments</p><p class="mt-1 text-2xl font-extrabold text-emerald-600">{{ counts.completed }}</p></button>
 </div>
 
 <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -111,6 +111,7 @@
   const cards = document.querySelectorAll('.portal-device-card');
 
   function applyFilter(filter) {
+    let visibleCount = 0;
     buttons.forEach(item => {
       const selected = item.dataset.filter === filter;
       item.classList.toggle('ring-2', selected);
@@ -118,7 +119,9 @@
       item.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
     cards.forEach(card => {
-      card.style.display = (filter === 'all' || card.dataset.category === filter) ? '' : 'none';
+      const visible = filter === 'all' || card.dataset.category === filter;
+      card.style.display = visible ? '' : 'none';
+      if (visible) visibleCount += 1;
     });
   }
 
@@ -131,7 +134,12 @@
   });
 
   const initialFilter = new URL(window.location.href).searchParams.get('filter');
-  if (['all', 'pending', 'incomplete', 'completed'].includes(initialFilter)) applyFilter(initialFilter);
+  applyFilter(['all', 'pending', 'incomplete', 'completed'].includes(initialFilter) ? initialFilter : 'all');
+
+  window.addEventListener('popstate', function () {
+    const filter = new URL(window.location.href).searchParams.get('filter');
+    applyFilter(['all', 'pending', 'incomplete', 'completed'].includes(filter) ? filter : 'all');
+  });
 
   document.querySelectorAll('.report-open').forEach(button => {
     button.addEventListener('click', function () {

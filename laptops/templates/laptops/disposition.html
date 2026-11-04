@@ -1,7 +1,97 @@
 {% extends 'laptops/base.html' %}
+{% load laptops_extras %}
 {% block title %}Disposition | Strathmore Laptop Recovery{% endblock %}
 {% block content %}
-<div class="mb-6"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Asset stewardship / Disposition</p><h1 class="mt-2 text-3xl font-extrabold">{% if is_admin %}Disposition operations{% else %}Choose a disposition path{% endif %}</h1><p class="mt-1 text-sm text-slate-500">{% if is_admin %}Coordinate collection and review Parts Bank cashback.{% else %}Schedule pickup or donate your device to the School Parts Bank.{% endif %}</p></div>
-{% if is_admin %}<section class="panel mb-6 overflow-hidden"><div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Collection slots</h2></div><div class="overflow-x-auto"><table class="w-full min-w-[650px] text-left text-sm"><thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-5 py-3">Device / requester</th><th class="px-5 py-3">Slot</th><th class="px-5 py-3">Location</th><th class="px-5 py-3">Action</th></tr></thead><tbody class="divide-y divide-slate-100">{% for slot in slots %}<tr><td class="px-5 py-3"><p class="font-bold">{{ slot.device.device_name }}</p><p class="text-xs text-slate-500">{{ slot.requested_by.get_full_name|default:slot.requested_by.username }}</p></td><td class="px-5 py-3">{{ slot.scheduled_for|date:'d M Y, H:i' }}</td><td class="px-5 py-3">{{ slot.location }}</td><td class="px-5 py-3">{% if slot.collected %}<span class="badge bg-green-100 text-forest">Collected</span>{% else %}<form method="post" class="flex gap-2">{% csrf_token %}<input type="hidden" name="slot" value="{{ slot.pk }}"><button name="action" value="{% if slot.approved %}mark_collected{% else %}approve_slot{% endif %}" class="btn btn-light">{% if slot.approved %}Mark collected{% else %}Approve slot{% endif %}</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="4" class="px-5 py-8 text-center text-slate-500">No collection requests.</td></tr>{% endfor %}</tbody></table></div></section><section class="panel overflow-hidden"><div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Cashback approvals</h2><p class="text-xs text-slate-500">Donation value is based on current depreciated device valuation.</p></div><div class="overflow-x-auto"><table class="w-full min-w-[700px] text-left text-sm"><thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-5 py-3">Device / donor</th><th class="px-5 py-3">Donation value</th><th class="px-5 py-3">3% cashback</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Decision</th></tr></thead><tbody class="divide-y divide-slate-100">{% for entry in donations %}<tr><td class="px-5 py-3"><p class="font-bold">{{ entry.device.device_name }}</p><p class="text-xs text-slate-500">{{ entry.donated_by.get_full_name|default:entry.donated_by.username }}</p></td><td class="px-5 py-3">KES {{ entry.donation_value_kes|floatformat:2 }}</td><td class="px-5 py-3 font-bold">KES {{ entry.cashback_kes|floatformat:2 }}</td><td class="px-5 py-3"><span class="badge bg-amber-100 text-amber">{{ entry.get_payout_status_display|default:entry.payout_status }}</span></td><td class="px-5 py-3"><div class="flex gap-2">{% if entry.payout_status == 'PENDING' %}<form method="post">{% csrf_token %}<input type="hidden" name="entry" value="{{ entry.pk }}"><button name="action" value="approve_donation" class="btn bg-forest text-white">Approve</button></form><form method="post">{% csrf_token %}<input type="hidden" name="entry" value="{{ entry.pk }}"><button name="action" value="reject_donation" class="btn btn-light">Reject</button></form>{% elif entry.payout_status == 'APPROVED' %}<form method="post">{% csrf_token %}<input type="hidden" name="entry" value="{{ entry.pk }}"><button name="action" value="mark_paid" class="btn btn-primary">Mark paid</button></form>{% else %}—{% endif %}</div></td></tr>{% empty %}<tr><td colspan="5" class="px-5 py-8 text-center text-slate-500">No donation payouts to review.</td></tr>{% endfor %}</tbody></table></div></section>
-{% else %}<div class="grid gap-5 lg:grid-cols-2">{% for device in devices %}<article class="panel p-5"><div class="flex items-start justify-between"><div><p class="text-xs font-bold uppercase tracking-wide text-brand">{{ device.device_name }}</p><h2 class="mt-1 text-lg font-extrabold">{{ device.make }} {{ device.model_name }}</h2><p class="mt-1 text-xs text-slate-500">Net valuation KES {{ device.current_net_valuation|floatformat:2 }}</p></div><span class="badge bg-slate-100 text-slate-600">{{ device.get_status_display }}</span></div>{% if device.days_until_collection != None %}<div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">Scheduled for collection in {{ device.days_until_collection }} days</div>{% endif %}<div class="mt-5 grid gap-3 sm:grid-cols-2"><form method="post" class="rounded border border-slate-200 p-4">{% csrf_token %}<input type="hidden" name="device" value="{{ device.pk }}"><input type="hidden" name="action" value="schedule"><h3 class="font-bold">Schedule pickup</h3><label class="mt-3 block text-xs font-semibold">Preferred date/time<input name="scheduled_for" type="datetime-local" required class="field mt-1"></label><label class="mt-3 block text-xs font-semibold">Collection location<input name="location" value="Strathmore University" class="field mt-1"></label><button class="btn btn-primary mt-4 w-full">Request collection</button></form><form method="post" class="flex flex-col rounded border border-gold/40 bg-amber-50/60 p-4">{% csrf_token %}<input type="hidden" name="device" value="{{ device.pk }}"><input type="hidden" name="action" value="donate"><h3 class="font-bold">School Parts Bank</h3><p class="mt-2 text-sm text-slate-600">Donate for recovery and request 3% M-Pesa cashback.</p><p class="mt-auto pt-4 text-xs text-slate-500">Payout requires IT approval.</p><button class="btn mt-3 bg-gold text-white">Donate device</button></form></div></article>{% empty %}<div class="panel p-10 text-center text-sm text-slate-500 lg:col-span-2">Register a device before requesting disposition.</div>{% endfor %}</div><div class="mt-7 grid gap-5 lg:grid-cols-2"><section class="panel p-5"><h2 class="font-bold">Your collection requests</h2><div class="mt-3 divide-y divide-slate-100">{% for slot in slots %}<p class="py-3 text-sm"><strong>{{ slot.device.device_name }}</strong> · {{ slot.scheduled_for|date:'d M Y, H:i' }} · {% if slot.collected %}Collected{% elif slot.approved %}Approved{% else %}Awaiting approval{% endif %}</p>{% empty %}<p class="py-4 text-sm text-slate-500">No pickup requests yet.</p>{% endfor %}</div></section><section class="panel p-5"><h2 class="font-bold">Donation rewards</h2><div class="mt-3 divide-y divide-slate-100">{% for entry in donations %}<p class="py-3 text-sm"><strong>{{ entry.device.device_name }}</strong> · KES {{ entry.cashback_kes|floatformat:2 }} · {{ entry.payout_status }}</p>{% empty %}<p class="py-4 text-sm text-slate-500">No Parts Bank donations yet.</p>{% endfor %}</div></section></div>{% endif %}
+<div class="mb-6">
+  <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Asset stewardship / Disposition</p>
+  <h1 class="mt-2 text-3xl font-extrabold">{% if is_admin %}Disposition operations{% else %}Choose a disposition path{% endif %}</h1>
+</div>
+
+{% if is_admin %}
+<div class="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,.8fr)]">
+  <section aria-label="Disbursement approvals">
+    <div class="mb-4 flex items-end justify-between"><div><h2 class="text-xl font-bold">Disbursement approvals</h2><p class="mt-1 text-xs text-slate-500">Review donation details before payout.</p></div><span class="text-xs text-slate-500">{{ donations|length }} submissions</span></div>
+    <div class="grid gap-4 md:grid-cols-2">
+      {% for entry in donations %}
+      <article class="panel overflow-hidden">
+        <div class="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
+          <div><p class="text-xs font-bold uppercase tracking-wide text-brand">{{ entry.device.device_name }}</p><h3 class="mt-1 font-extrabold">{{ entry.device.make }} {{ entry.device.model_name }}</h3><p class="mt-1 text-xs text-slate-500">Serial: {{ entry.device.serial_number|default:"Not recorded" }}</p></div>
+          <button type="button" class="btn btn-light shrink-0" aria-expanded="false" aria-controls="disbursement-info-{{ entry.pk }}" data-disbursement-toggle>View info</button>
+        </div>
+        <div class="grid grid-cols-3 gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3 text-center">
+          <div><p class="text-[10px] font-bold text-slate-500">ACQUIRED</p><p class="mt-1 text-sm font-bold">{{ entry.acquired_value|kes_format }}</p></div>
+          <div><p class="text-[10px] font-bold text-slate-500">CURRENT</p><p class="mt-1 text-sm font-bold text-navy">{{ entry.current_value|kes_format }}</p></div>
+          <div><p class="text-[10px] font-bold text-slate-500">CASHBACK</p><p class="mt-1 text-sm font-bold text-forest">{{ entry.cashback_payout|kes_format }}</p></div>
+        </div>
+        <div class="px-4 py-3">
+          {% if entry.payout_status == 'REJECTED' %}<span class="badge bg-red-100 text-danger">Disbursement not accepted</span>{% elif entry.payout_status == 'APPROVED' %}<span class="badge bg-blue-100 text-blue-700">Approved</span>{% elif entry.payout_status == 'PAID' %}<span class="badge bg-green-100 text-forest">Paid</span>{% else %}<span class="badge bg-amber-100 text-amber">Pending approval</span>{% endif %}
+        </div>
+        <div id="disbursement-info-{{ entry.pk }}" hidden class="border-t border-slate-200 bg-sky-50/60 p-4">
+          <dl class="grid gap-3 sm:grid-cols-2">
+            <div><dt class="text-xs text-slate-500">Device owner</dt><dd class="mt-1 font-semibold">{{ entry.donated_by.get_full_name|default:entry.donated_by.username }}</dd></div>
+            <div><dt class="text-xs text-slate-500">Processor / RAM</dt><dd class="mt-1">{{ entry.device.processor }} · {{ entry.device.ram_gb }} GB</dd></div>
+            <div><dt class="text-xs text-slate-500">Storage</dt><dd class="mt-1">{{ entry.device.storage_info }}</dd></div>
+            <div><dt class="text-xs text-slate-500">Acquired value</dt><dd class="mt-1 font-bold">{{ entry.acquired_value|kes_format }}</dd></div>
+            <div><dt class="text-xs text-slate-500">Current value</dt><dd class="mt-1 font-bold">{{ entry.current_value|kes_format }}</dd></div>
+            <div><dt class="text-xs text-slate-500">3% cashback payout</dt><dd class="mt-1 font-bold text-forest">{{ entry.cashback_payout|kes_format }}</dd></div>
+          </dl>
+          <div class="mt-4 grid gap-2">
+            <p class="text-xs font-bold uppercase text-slate-500">Work performed</p>
+            {% for repair in entry.device.repairs.all %}
+            <div class="rounded border border-slate-200 bg-white px-3 py-2 text-sm"><strong>{{ repair.component_name }}</strong> — {% if repair.repair_result == 'FIXED' %}Fixed / Restored{% else %}Not Repairable{% endif %}<p class="text-xs text-slate-500">By {{ repair.technician.get_full_name|default:repair.technician.username|default:"IT Admin" }}{% if repair.comments %} · {{ repair.comments }}{% endif %}</p></div>
+            {% empty %}<p class="text-xs text-slate-500">No repair records.</p>{% endfor %}
+            {% if entry.device.certificate %}
+            <div class="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm"><strong>Sanitization completed</strong><p class="text-xs text-slate-500">{{ entry.device.certificate.sanitization_standard }} · {{ entry.device.certificate.tool_used }}{% if entry.device.certificate.verified_by %} · By {{ entry.device.certificate.verified_by.get_full_name|default:entry.device.certificate.verified_by.username }}{% endif %}</p></div>
+            {% else %}<p class="text-xs text-slate-500">No sanitization certificate.</p>{% endif %}
+          </div>
+          {% if entry.rejection_reason %}<div class="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger"><strong>Rejection reason:</strong> {{ entry.rejection_reason }}</div>{% endif %}
+          {% if entry.payout_status == 'PENDING' %}
+          <form method="post" class="mt-4 space-y-3">{% csrf_token %}
+            <input type="hidden" name="entry" value="{{ entry.pk }}">
+            <label class="block text-xs font-semibold">Rejection Reason (optional)<textarea name="rejection_reason" rows="2" class="field mt-1 w-full resize-y" placeholder="Optional reason for rejection"></textarea></label>
+            <div class="flex flex-wrap gap-2"><button name="action" value="reject_donation" class="btn bg-danger text-white">REJECT DISBURSEMENT</button><button name="action" value="approve_donation" class="btn bg-forest text-white">APPROVE DISBURSEMENT ({{ entry.cashback_payout|kes_format }})</button></div>
+          </form>
+          {% elif entry.payout_status == 'APPROVED' %}
+          <form method="post" class="mt-4">{% csrf_token %}<input type="hidden" name="entry" value="{{ entry.pk }}"><button name="action" value="mark_paid" class="btn btn-primary">Mark paid</button></form>
+          {% endif %}
+        </div>
+      </article>
+      {% empty %}<div class="panel p-10 text-center text-sm text-slate-500 md:col-span-2">No donation disbursement submissions.</div>{% endfor %}
+    </div>
+  </section>
+
+  <aside class="panel h-fit overflow-hidden" aria-label="Collection slots">
+    <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Collection slots</h2><p class="mt-1 text-xs text-slate-500">Side schedule operations.</p></div>
+    <div class="divide-y divide-slate-100">
+      {% for slot in slots %}
+      <div class="p-4"><p class="font-bold">{{ slot.device.device_name }}</p><p class="mt-1 text-xs text-slate-500">{{ slot.requested_by.get_full_name|default:slot.requested_by.username }}</p><p class="mt-2 text-sm">{{ slot.scheduled_for|date:'d M Y, H:i' }}</p><p class="text-xs text-slate-500">{{ slot.location }}</p>{% if slot.collected %}<span class="badge mt-3 bg-green-100 text-forest">Collected</span>{% else %}<form method="post" class="mt-3">{% csrf_token %}<input type="hidden" name="slot" value="{{ slot.pk }}"><button name="action" value="{% if slot.approved %}mark_collected{% else %}approve_slot{% endif %}" class="btn btn-light w-full">{% if slot.approved %}Mark collected{% else %}Approve slot{% endif %}</button></form>{% endif %}</div>
+      {% empty %}<p class="p-5 text-center text-sm text-slate-500">No collection requests.</p>{% endfor %}
+    </div>
+  </aside>
+</div>
+{% else %}
+<div class="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,.65fr)]">
+  <section>
+    <div class="grid gap-5 md:grid-cols-2">
+      {% for device in devices %}
+      <article class="panel p-5"><h2 class="font-bold">{{ device.device_name }}</h2><p class="mt-1 text-sm text-slate-600">{{ device.make }} {{ device.model_name }}</p>{% if device.days_until_collection != None %}<div class="mt-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">Scheduled in {{ device.days_until_collection }} days</div>{% endif %}<div class="mt-5 grid gap-3"><form method="post" class="rounded border border-slate-200 p-4">{% csrf_token %}<input type="hidden" name="device" value="{{ device.pk }}"><input type="hidden" name="action" value="schedule"><label class="block text-xs font-semibold">Preferred date/time<input name="scheduled_for" type="datetime-local" required class="field mt-1"></label><label class="mt-3 block text-xs font-semibold">Collection location<input name="location" value="Strathmore University" class="field mt-1"></label><button class="btn btn-primary mt-4 w-full">Request collection</button></form><form method="post" class="rounded border border-gold/40 bg-amber-50/60 p-4">{% csrf_token %}<input type="hidden" name="device" value="{{ device.pk }}"><input type="hidden" name="action" value="donate"><h3 class="font-bold">School Parts Bank</h3><p class="mt-2 text-sm text-slate-600">Donate this device and request its calculated cashback.</p><button class="btn mt-3 w-full bg-gold text-white">Donate device</button></form></div></article>
+      {% empty %}<div class="panel p-10 text-center text-sm text-slate-500 md:col-span-2">Register a device before requesting disposition.</div>{% endfor %}
+    </div>
+    <section class="mt-6 panel overflow-hidden"><div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Donation disbursement status</h2></div><div class="divide-y divide-slate-100">{% for entry in donations %}<div class="p-5"><div class="flex flex-wrap items-start justify-between gap-3"><div><p class="font-bold">{{ entry.device.device_name }} · {{ entry.device.make }} {{ entry.device.model_name }}</p><p class="mt-1 text-xs text-slate-500">Current value {{ entry.current_value|kes_format }} · Cashback {{ entry.cashback_payout|kes_format }}</p></div>{% if entry.payout_status == 'REJECTED' %}<span class="badge bg-red-100 text-danger">Disbursement not accepted</span>{% elif entry.payout_status == 'APPROVED' %}<span class="badge bg-blue-100 text-blue-700">Approved</span>{% elif entry.payout_status == 'PAID' %}<span class="badge bg-green-100 text-forest">Paid</span>{% else %}<span class="badge bg-amber-100 text-amber">Pending approval</span>{% endif %}</div>{% if entry.rejection_reason %}<p class="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger"><strong>Rejection reason:</strong> {{ entry.rejection_reason }}</p>{% endif %}</div>{% empty %}<p class="p-5 text-sm text-slate-500">No Parts Bank donation submissions yet.</p>{% endfor %}</div></section>
+  </section>
+  <aside class="panel h-fit overflow-hidden"><div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Collection requests</h2></div><div class="divide-y divide-slate-100">{% for slot in slots %}<div class="p-4"><p class="font-bold">{{ slot.device.device_name }}</p><p class="mt-2 text-sm">{{ slot.scheduled_for|date:'d M Y, H:i' }}</p><p class="text-xs text-slate-500">{{ slot.location }}</p><p class="mt-2 text-xs font-semibold">{% if slot.collected %}Collected{% elif slot.approved %}Approved{% else %}Awaiting approval{% endif %}</p></div>{% empty %}<p class="p-5 text-sm text-slate-500">No pickup requests yet.</p>{% endfor %}</div></aside>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('[data-disbursement-toggle]').forEach((button) => {
+  button.addEventListener('click', () => {
+    const panel = document.getElementById(button.getAttribute('aria-controls'));
+    panel.hidden = !panel.hidden;
+    button.setAttribute('aria-expanded', String(!panel.hidden));
+    button.textContent = panel.hidden ? 'View info' : 'Hide info';
+  });
+});
+</script>
 {% endblock %}

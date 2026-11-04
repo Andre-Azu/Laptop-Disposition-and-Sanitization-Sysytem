@@ -55,7 +55,7 @@
 </form>
 
 {% if submitted_assessment %}
-<section class="panel mt-6 max-w-5xl p-5 md:p-7">
+<section class="panel mt-6 max-w-5xl p-5 md:p-7" id="diagnostic-summary">
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Diagnostic summary</p><h2 class="mt-1 text-xl font-extrabold text-navy">Assessment report</h2></div>
     <div class="rounded-lg px-4 py-3 text-center {{ submitted_assessment.health_badge_color }}"><p class="text-2xl font-extrabold">{{ submitted_assessment.overall_score }} / 100</p><p class="text-xs font-bold">{{ submitted_assessment.health_badge_label }}</p></div>
@@ -90,6 +90,10 @@
 {% block scripts %}
 <script>
 (() => {
+  if (window.location.hash === '#diagnostic-summary') {
+    document.getElementById('diagnostic-summary').scrollIntoView({ behavior: 'smooth' });
+  }
+
   const form = document.getElementById('self-assessment-form');
   if (!form) return;
 

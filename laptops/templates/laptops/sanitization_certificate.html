@@ -1,0 +1,22 @@
+{% extends 'laptops/base.html' %}
+{% block title %}Sanitization Certificate{% endblock %}
+{% block content %}
+<article class="panel mx-auto max-w-4xl p-6 md:p-10">
+  <header class="border-b border-slate-200 pb-6 text-center">
+    <p class="text-xs font-bold uppercase tracking-[.2em] text-brand">Strathmore University</p>
+    <h1 class="mt-2 text-3xl font-extrabold">Laptop Sanitization Certificate</h1>
+  </header>
+  <div class="grid gap-6 py-6 md:grid-cols-2">
+    <section><h2 class="text-xs font-bold uppercase text-slate-500">Device Details</h2><dl class="mt-3 space-y-2 text-sm"><div><b>Device:</b> {{ device.device_name }}</div><div><b>Manufacturer:</b> {{ device.make }}</div><div><b>Model:</b> {{ device.model_name }}</div><div><b>Serial Number:</b> {{ device.serial_number }}</div></dl></section>
+    <section><h2 class="text-xs font-bold uppercase text-slate-500">Sanitization Parameters</h2><dl class="mt-3 space-y-2 text-sm"><div><b>Standard:</b> {{ certificate.sanitization_standard }}</div><div><b>Tool:</b> {{ certificate.tool_used }}</div><div><b>Passes:</b> {{ certificate.pass_count }}</div><div><b>Drive Serial:</b> {{ certificate.drive_serial_number }}</div><div><b>Media:</b> {{ certificate.storage_media_type }}</div></dl></section>
+  </div>
+  <div class="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-6">
+    <div><p class="font-bold">Sanitized by IT Admin: {{ certificate.verified_by.get_full_name|default:certificate.verified_by.username }}</p><p class="mt-2 text-xs text-slate-500">Certificate: {{ certificate.cert_code }}</p><p class="mt-1 break-all font-mono text-[10px] text-slate-500">SHA-256: {{ certificate.crypto_hash }}</p></div>
+    {% if certificate.cert_code %}
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&amp;data={{ certificate.cert_code|urlencode }}%7C{{ certificate.crypto_hash|urlencode }}" alt="Certificate QR code" class="h-[100px] w-[100px]">
+    {% endif %}
+  </div>
+  {% if certificate.technician_notes %}<p class="mt-5 text-sm"><b>Technician notes:</b> {{ certificate.technician_notes }}</p>{% endif %}
+  <div class="mt-6 flex justify-end print:hidden"><button type="button" onclick="window.print()" class="btn btn-primary">Print Certificate PDF</button></div>
+</article>
+{% endblock %}

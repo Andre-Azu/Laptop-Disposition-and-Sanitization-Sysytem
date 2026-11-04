@@ -6,7 +6,8 @@
   <h1 class="mt-2 text-3xl font-extrabold">IT Repair Queue</h1>
   <p class="mt-1 text-sm text-slate-500">Review owner-reported and technician-diagnostic component flags before repair.</p>
 </div>
-<div class="grid gap-4 xl:grid-cols-2">
+<div class="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+  <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
   {% for device in devices %}
   <article class="panel">
     <div class="border-b border-slate-100 px-5 py-4">
@@ -15,7 +16,7 @@
           <p class="text-xs font-bold uppercase tracking-wide text-brand">{{ device.device_name }} · {{ device.owner.get_full_name|default:device.owner.username }}</p>
           <h2 class="mt-1 text-lg font-extrabold">{{ device.make }} {{ device.model_name }}</h2>
         </div>
-        {% if device.status == 'SANITIZATION_FAILED' %}
+        {% if device.status == 'SANITIZATION_FAILED' or device.sanitization_tag == 'SANITIZATION_FAILED' %}
         <span class="badge bg-red-100 text-danger">SANITIZATION_FAILED</span>
         {% endif %}
       </div>
@@ -26,7 +27,7 @@
         <h3 class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Owner Self-Assessment Flags</h3>
         <div class="flex flex-wrap gap-2">
           {% for component, status, status_code in device.owner_assessment_flags %}
-          <span class="badge bg-blue-100 text-blue-700">{{ component|upper }} · {{ status|upper }}</span>
+          <span class="badge bg-blue-100 text-blue-700">{{ component }} · {{ status }}</span>
           {% empty %}
           <span class="text-xs text-slate-400">No owner flags reported</span>
           {% endfor %}
@@ -36,7 +37,7 @@
         <h3 class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">IT Diagnostic Flags</h3>
         <div class="flex flex-wrap gap-2">
           {% for component, status, status_code in device.it_diagnostic_flags %}
-          <span class="badge bg-amber-100 text-amber-700">{{ component|upper }} · {{ status|upper }}</span>
+          <span class="badge bg-amber-100 text-amber-700">{{ component }} · {{ status }}</span>
           {% empty %}
           <span class="text-xs text-slate-400">No IT diagnostic flags recorded</span>
           {% endfor %}
@@ -44,7 +45,15 @@
       </section>
     </div>
     <div class="flex justify-end border-t border-slate-100 px-5 py-4">
+      {% if device.status == 'IT_Admin_assesment_complete' or device.status == 'Sanitization_Processing' or device.status == 'Repair_Processing' %}
       <a href="{% url 'repair_execution' device.pk %}" class="btn btn-primary">Start Repair</a>
+      {% else %}
+      <section class="w-full rounded-xl border border-slate-200 bg-slate-50 p-5 text-center">
+        <h3 class="text-lg font-extrabold text-navy">Cannot be repaired before assessment</h3>
+        <p class="mt-2 text-sm text-slate-600">this device is awaiting assesment</p>
+        <a href="{% url 'it_assessment_detail' device.pk %}" class="btn btn-primary mt-4">Go to IT Assessment →</a>
+      </section>
+      {% endif %}
     </div>
   </article>
   {% empty %}
@@ -53,5 +62,80 @@
     <p class="mt-1 text-sm text-slate-500">Devices sent for repair will appear here.</p>
   </div>
   {% endfor %}
+  </div>
+<section>
+  <div class="mb-3 flex items-end justify-between gap-3">
+    <div>
+      <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Repair history</p>
+      <h2 class="mt-1 text-xl font-extrabold text-navy">Repaired laptops</h2>
+    </div>
+    <span class="badge bg-slate-100 text-slate-600">{{ repaired_devices|length }} devices</span>
+  </div>
+  <div class="space-y-3">
+    {% for repair in repaired_devices %}
+    <details class="panel overflow-hidden">
+      <summary class="cursor-pointer list-none px-5 py-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-extrabold text-navy">{{ repair.device.device_name }}</p>
+            <p class="mt-1 text-xs text-slate-500">{{ repair.device.make }} {{ repair.device.model_name }} · {{ repair.device.serial_number }}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="badge bg-green-100 text-forest">{{ repair.fixed|length }} fixed</span>
+            {% if repair.not_repairable %}
+            <span class="badge bg-red-100 text-danger">{{ repair.not_repairable|length }} not repairable</span>
+            {% endif %}
+          </div>
+        </div>
+      </summary>
+      <div class="border-t border-slate-100 bg-slate-50 px-5 py-5">
+        <div class="grid gap-4 md:grid-cols-2">
+          <dl class="space-y-2 text-sm">
+            <div><dt class="text-xs font-bold uppercase text-slate-500">Device owner</dt><dd class="mt-1">{{ repair.device.owner.get_full_name|default:repair.device.owner.username }}</dd></div>
+            <div><dt class="text-xs font-bold uppercase text-slate-500">Processor / memory</dt><dd class="mt-1">{{ repair.device.processor }} · {{ repair.device.ram_gb }} GB RAM</dd></div>
+            <div><dt class="text-xs font-bold uppercase text-slate-500">Storage</dt><dd class="mt-1">{{ repair.device.storage_info }}</dd></div>
+            <div><dt class="text-xs font-bold uppercase text-slate-500">Repair completed</dt><dd class="mt-1">{{ repair.completed_at|date:"d M Y, H:i" }}</dd></div>
+          </dl>
+          <div class="space-y-4 text-sm">
+            <section>
+              <h3 class="text-xs font-bold uppercase text-forest">Fixed / restored</h3>
+              <div class="mt-2 flex flex-wrap gap-2">
+                {% for component in repair.fixed %}
+                <span class="badge bg-green-100 text-forest">{{ component }}</span>
+                {% empty %}
+                <span class="text-xs text-slate-400">None</span>
+                {% endfor %}
+              </div>
+            </section>
+            <section>
+              <h3 class="text-xs font-bold uppercase text-danger">Not repairable</h3>
+              <div class="mt-2 flex flex-wrap gap-2">
+                {% for component in repair.not_repairable %}
+                <span class="badge bg-red-100 text-danger">{{ component }}</span>
+                {% empty %}
+                <span class="text-xs text-slate-400">None</span>
+                {% endfor %}
+              </div>
+            </section>
+          </div>
+        </div>
+        <div class="mt-5 border-t border-slate-200 pt-4 text-sm">
+          <p><span class="font-bold text-slate-600">IT Admin:</span>
+            {% for technician in repair.technicians %}
+            {{ technician.get_full_name|default:technician.username }}{% if not forloop.last %}, {% endif %}
+            {% empty %}Not recorded{% endfor %}
+          </p>
+          {% if repair.comments %}
+          <p class="mt-2"><span class="font-bold text-slate-600">Service comments:</span></p>
+          {% for comment in repair.comments %}<p class="mt-1 text-slate-600">{{ comment }}</p>{% endfor %}
+          {% endif %}
+        </div>
+      </div>
+    </details>
+    {% empty %}
+    <div class="panel p-6 text-center text-sm text-slate-500">No repaired laptops recorded yet.</div>
+    {% endfor %}
+  </div>
+</section>
 </div>
 {% endblock %}
