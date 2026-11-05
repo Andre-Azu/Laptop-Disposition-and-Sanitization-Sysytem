@@ -14,7 +14,7 @@
       <span class="badge bg-slate-100 text-slate-600">{{ device.get_status_display }}</span>
     </div>
     <div class="px-5 py-5">
-      {% if device.status == 'IT_Admin_assesment_complete' or device.status == 'Sanitization_Processing' or device.status == 'Repair_Processing' %}
+      {% if device.assessment_completed or device.status == 'IT_Admin_assesment_complete' or device.status == 'Sanitization_Processing' or device.status == 'Repair_Processing' or device.status == 'REPAIR_AND_SANITIZATION_PENDING' %}
       <div class="flex justify-end"><a href="{% url 'sanitization_execution' device.pk %}" class="btn btn-primary">Carry out sanitization</a></div>
       {% else %}
       <section class="rounded-xl border border-slate-200 bg-slate-50 p-5 text-center">

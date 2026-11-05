@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .forms import DeviceRegistrationForm, OwnerSelfAssessmentForm, RepairEvaluationForm
-from .models import AuditLog, Device, DonationLedger, ITAssessment, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment, User
+from .models import AuditLog, CollectionSlot, Device, DonationLedger, ITAssessment, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment, User
 from .utils import calculate_device_valuation, format_kes
 
 
@@ -180,9 +180,10 @@ class WorkflowTests(TestCase):
         OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="REPAIR", screen_status="PARTIALLY_WORKING")
         self.client.force_login(self.admin)
         response = self.client.get(reverse("devices"))
-        self.assertContains(response, "View details")
-        self.assertContains(response, "Device manager physical assessment")
-        self.assertContains(response, "Partially Working")
+        self.assertContains(response, "More info")
+        self.assertContains(response, "Owner contact")
+        self.assertContains(response, "Component ratings")
+        self.assertContains(response, "Final decision")
 
     def test_device_inventory_filters_by_selected_component_condition(self):
         partially_working = self.make_device(device_name="Partially working laptop")
@@ -288,6 +289,68 @@ class WorkflowTests(TestCase):
         response = self.client.get(reverse("repairs"))
         self.assertIn(self.device, response.context["devices"])
         self.assertContains(response, "Battery · Partially Working")
+
+    def test_both_pathway_is_available_to_sanitization_and_repair_workstations(self):
+        OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="BOTH")
+        self.device.status = Device.Status.REPAIR_AND_SANITIZATION_PENDING
+        self.device.save(update_fields=["status"])
+
+        self.client.force_login(self.admin)
+        sanitization_response = self.client.get(reverse("sanitization_execution", args=[self.device.pk]))
+        repair_response = self.client.get(reverse("repair_execution", args=[self.device.pk]))
+        overview_response = self.client.get(reverse("overview"), {"status": "awaiting_sanitization"})
+
+        self.assertEqual(sanitization_response.status_code, 200)
+        self.assertEqual(repair_response.status_code, 200)
+        self.assertIn(self.device, overview_response.context["devices"])
+
+    def test_completed_assessment_unlocks_repair_queue_despite_stale_status(self):
+        OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="REPAIR")
+        ITAssessment.objects.create(
+            device=self.device,
+            assessed_by=self.admin,
+            completed_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+        self.device.status = Device.Status.PENDING_ADMIN_ASSESMENT
+        self.device.save(update_fields=["status"])
+
+        self.client.force_login(self.admin)
+        queue_response = self.client.get(reverse("repairs"))
+        execution_response = self.client.get(reverse("repair_execution", args=[self.device.pk]))
+
+        self.assertEqual(queue_response.status_code, 200)
+        self.assertContains(queue_response, "Start Repair")
+        self.assertNotContains(queue_response, "Cannot be repaired before assessment")
+        self.assertEqual(execution_response.status_code, 200)
+
+    def test_sanitization_media_type_uses_supported_dropdown_options(self):
+        self.device.status = Device.Status.SANITIZATION_PROCESSING
+        self.device.save(update_fields=["status"])
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("sanitization_execution", args=[self.device.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<option value="NVMe SSD">NVMe SSD</option>', html=True)
+        self.assertContains(response, '<option value="Unknown">Unknown</option>', html=True)
+
+    def test_device_manager_sees_sanitization_complete_and_can_view_certificate(self):
+        certificate = SanitizationCertificate.objects.create(
+            device=self.device,
+            verified_by=self.admin,
+            cert_code="TEST-SAN-CERT",
+            crypto_hash="a" * 64,
+        )
+        self.device.status = Device.Status.SCHEDULED_FOR_COLLECTION
+        self.device.save(update_fields=["status"])
+
+        self.client.force_login(self.manager)
+        my_devices_response = self.client.get(reverse("my_devices"))
+        certificate_response = self.client.get(reverse("sanitization_certificate", args=[certificate.pk]))
+
+        self.assertContains(my_devices_response, "Sanitization Complete")
+        self.assertContains(my_devices_response, "View Sanitization Certificate")
+        self.assertEqual(certificate_response.status_code, 200)
 
     def test_mock_sanitization_pass_verifies_and_issues_certificate(self):
         OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="SANITIZATION")
@@ -396,7 +459,7 @@ class WorkflowTests(TestCase):
         self.assertTrue(self.device.disbursement_approved)
         self.assertTrue(AuditLog.objects.filter(device=self.device, action_stage="Donation APPROVED").exists())
 
-    def test_disposition_rejection_saves_optional_reason(self):
+    def test_disposition_rejection_saves_required_reason(self):
         ledger = DonationLedger.objects.create(
             device=self.device,
             donated_by=self.manager,
@@ -414,6 +477,24 @@ class WorkflowTests(TestCase):
         self.assertEqual(ledger.payout_status, DonationLedger.Status.REJECTED)
         self.assertEqual(ledger.rejection_reason, "Valuation requires review")
 
+    def test_disposition_rejection_requires_reason(self):
+        ledger = DonationLedger.objects.create(
+            device=self.device,
+            donated_by=self.manager,
+            donation_value_kes=Decimal("75000"),
+            cashback_kes=Decimal("2250"),
+            payout_status=DonationLedger.Status.PENDING,
+        )
+        self.client.force_login(self.admin)
+        self.client.post(reverse("disposition"), {
+            "action": "reject_donation",
+            "entry": ledger.pk,
+            "rejection_reason": "",
+        })
+        ledger.refresh_from_db()
+        self.assertEqual(ledger.payout_status, DonationLedger.Status.PENDING)
+        self.assertEqual(ledger.rejection_reason, "")
+
     def test_device_manager_sees_rejected_disbursement(self):
         ledger = DonationLedger.objects.create(
             device=self.device,
@@ -427,3 +508,36 @@ class WorkflowTests(TestCase):
         response = self.client.get(reverse("disposition"))
         self.assertContains(response, "Disbursement not accepted")
         self.assertContains(response, "Valuation requires review")
+
+    def test_device_manager_accepts_offer_marks_donated_and_removes_collection(self):
+        ITAssessment.objects.create(
+            device=self.device,
+            assessed_by=self.admin,
+            completed_at=datetime.datetime.now(datetime.timezone.utc),
+            notes="Verified",
+        )
+        self.device.status = Device.Status.IT_VERIFIED
+        self.device.save(update_fields=["status"])
+        CollectionSlot.objects.create(
+            device=self.device,
+            requested_by=self.manager,
+            scheduled_for=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1),
+            location="Strathmore University",
+        )
+
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse("user_assessments_tab"), {
+            "action": "accept_cashback_offer",
+            "device": self.device.pk,
+            "donation_terms": "accepted",
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.status, Device.Status.DONATED)
+        self.assertTrue(DonationLedger.objects.filter(
+            device=self.device,
+            donated_by=self.manager,
+            payout_status=DonationLedger.Status.PENDING,
+        ).exists())
+        self.assertFalse(CollectionSlot.objects.filter(device=self.device).exists())

@@ -48,7 +48,7 @@
           {% if entry.payout_status == 'PENDING' %}
           <form method="post" class="mt-4 space-y-3">{% csrf_token %}
             <input type="hidden" name="entry" value="{{ entry.pk }}">
-            <label class="block text-xs font-semibold">Rejection Reason (optional)<textarea name="rejection_reason" rows="2" class="field mt-1 w-full resize-y" placeholder="Optional reason for rejection"></textarea></label>
+            <label class="block text-xs font-semibold">Rejection reason (required)<textarea name="rejection_reason" rows="3" required class="field mt-1 w-full resize-y" placeholder="Explain why the cashback disbursement is being rejected. This reason will be visible to the device manager."></textarea></label>
             <div class="flex flex-wrap gap-2"><button name="action" value="reject_donation" class="btn bg-danger text-white">REJECT DISBURSEMENT</button><button name="action" value="approve_donation" class="btn bg-forest text-white">APPROVE DISBURSEMENT ({{ entry.cashback_payout|kes_format }})</button></div>
           </form>
           {% elif entry.payout_status == 'APPROVED' %}

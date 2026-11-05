@@ -1,4 +1,5 @@
 {% extends 'laptops/base.html' %}
+{% load laptops_extras %}
 {% block title %}Assessments | Strathmore Laptop Recovery{% endblock %}
 {% block content %}
 <div class="mb-6">
@@ -20,8 +21,67 @@
           <span><span class="font-semibold text-slate-500">Acquisition Date:</span> {% if laptop.purchase_date %}{{ laptop.purchase_date|date:'d M Y' }}{% elif laptop.acquisition_period %}{{ laptop.acquisition_period }}{% else %}Not recorded{% endif %}</span>
         </div>
       </div>
-      <span class="badge rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">{% if laptop.status == 'SANITIZATION_FAILED' or laptop.sanitization_tag == 'SANITIZATION_FAILED' %}Sanitization Failed{% else %}{{ laptop.get_status_display }}{% endif %}</span>
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <span class="badge rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">{% if laptop.certificate %}Sanitization Complete{% elif laptop.status == 'SANITIZATION_FAILED' or laptop.sanitization_tag == 'SANITIZATION_FAILED' %}Sanitization Failed{% else %}{{ laptop.get_status_display }}{% endif %}</span>
+        {% if laptop.certificate %}<a href="{% url 'sanitization_certificate' laptop.certificate.pk %}" class="btn btn-primary">View Sanitization Certificate</a>{% endif %}
+      </div>
     </div>
+
+    <section class="border-b border-slate-200 bg-slate-50/70 px-5 py-5 md:px-6">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-[.14em] text-brand">Computer valuation</p>
+          <p class="mt-1 text-sm text-slate-500">Based on the acquired value and verified component condition</p>
+        </div>
+      </div>
+      <dl class="grid gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-3">
+        <div class="bg-white px-4 py-4"><dt class="text-xs font-bold uppercase text-slate-500">Acquired value</dt><dd class="mt-1 text-lg font-extrabold text-navy">{{ laptop.assessment_valuation.acquired_value|kes_format }}</dd></div>
+        <div class="bg-white px-4 py-4"><dt class="text-xs font-bold uppercase text-slate-500">Current value</dt><dd class="mt-1 text-lg font-extrabold text-navy">{{ laptop.assessment_valuation.current_value|kes_format }}</dd></div>
+        <div class="bg-emerald-50 px-4 py-4"><dt class="text-xs font-bold uppercase text-emerald-700">School cashback offer</dt><dd class="mt-1 text-lg font-extrabold text-emerald-700">{{ laptop.assessment_valuation.cashback_amount|kes_format }}</dd></div>
+      </dl>
+
+      {% if laptop.it_assessment %}
+        {% if laptop.status == 'IT_Admin_assesment_complete' and not laptop.donation_ledger %}
+        <div class="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4" role="alert">
+          <div class="flex gap-3">
+            <span class="text-xl" aria-hidden="true">⚠</span>
+            <div>
+              <p class="font-extrabold text-amber-900">Donation warning</p>
+              <p class="mt-1 text-sm text-amber-900">Accepting this offer means you willingly give this device to the school as a donation. The device will be marked as donated and will no longer be available for collection scheduling.</p>
+              <p class="mt-2 text-sm text-amber-900">You agree to the donation terms and conditions. The IT Administrator may reject approval of the cashback disbursement.</p>
+            </div>
+          </div>
+          <form method="post" class="mt-4 rounded-lg bg-white/70 p-3">{% csrf_token %}
+            <input type="hidden" name="action" value="accept_cashback_offer">
+            <input type="hidden" name="device" value="{{ laptop.pk }}">
+            <label class="flex items-start gap-3 text-sm text-slate-700">
+              <input type="checkbox" name="donation_terms" value="accepted" required class="mt-1 h-4 w-4">
+              <span>I have read and accept the donation terms and conditions and confirm that I am willingly donating this device.</span>
+            </label>
+            <button class="btn mt-4 w-full bg-gold text-white" type="submit">Accept offer and donate my device</button>
+          </form>
+        </div>
+        {% elif laptop.donation_ledger %}
+        <div class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm font-bold text-navy">Donation and cashback status</p>
+            {% if laptop.donation_ledger.payout_status == 'REJECTED' %}<span class="badge bg-red-100 text-danger">Disbursement rejected</span>{% elif laptop.donation_ledger.payout_status == 'APPROVED' %}<span class="badge bg-blue-100 text-blue-700">Disbursement approved</span>{% elif laptop.donation_ledger.payout_status == 'PAID' %}<span class="badge bg-green-100 text-forest">Cashback paid</span>{% else %}<span class="badge bg-amber-100 text-amber">Pending disbursement approval</span>{% endif %}
+          </div>
+          {% if laptop.donation_ledger.rejection_reason %}
+          <p class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-danger"><strong>IT Administrator rejection reason:</strong> {{ laptop.donation_ledger.rejection_reason }}</p>
+          {% endif %}
+        </div>
+        {% endif %}
+      {% endif %}
+
+      {% if laptop.assessment_faulty_parts or laptop.assessment_repairable_parts or laptop.assessment_non_repairable_parts %}
+      <div class="mt-4 grid gap-3 md:grid-cols-3">
+        <div class="rounded-lg border border-rose-100 bg-white p-3"><p class="text-xs font-bold uppercase text-rose-700">Faulty / affected parts</p><p class="mt-2 text-sm text-slate-700">{% if laptop.assessment_faulty_parts %}{{ laptop.assessment_faulty_parts|join:", " }}{% else %}None recorded in the IT assessment{% endif %}</p></div>
+        <div class="rounded-lg border border-blue-100 bg-white p-3"><p class="text-xs font-bold uppercase text-blue-700">Repairable parts</p><p class="mt-2 text-sm text-slate-700">{% if laptop.assessment_repairable_parts %}{{ laptop.assessment_repairable_parts|join:", " }}{% else %}None recorded{% endif %}</p></div>
+        <div class="rounded-lg border border-amber-200 bg-white p-3"><p class="text-xs font-bold uppercase text-amber-700">Non-repairable parts</p><p class="mt-2 text-sm text-slate-700">{% if laptop.assessment_non_repairable_parts %}{{ laptop.assessment_non_repairable_parts|join:", " }}{% else %}None recorded{% endif %}</p></div>
+      </div>
+      {% endif %}
+    </section>
 
     <div class="grid gap-0 md:grid-cols-2">
       <article class="border-b border-slate-200 bg-sky-50 p-5 md:border-b-0 md:border-r md:p-6">

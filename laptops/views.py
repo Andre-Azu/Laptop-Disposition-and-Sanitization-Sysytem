@@ -100,7 +100,10 @@ def overview(request):
     status_filter = request.GET.get("status", "")
     if status_filter:
         if status_filter == "awaiting_sanitization":
-            base = base.filter(status=Device.Status.SANITIZATION_PROCESSING)
+            base = base.filter(status__in=[
+                Device.Status.SANITIZATION_PROCESSING,
+                Device.Status.REPAIR_AND_SANITIZATION_PENDING,
+            ])
         elif status_filter == "awaiting_repair":
             base = base.filter(status__in=[Device.Status.REPAIR_PROCESSING, Device.Status.REPAIR_AND_SANITIZATION_PENDING])
         elif status_filter == "awaiting_disbursement":
@@ -120,7 +123,10 @@ def overview(request):
         "status_filter": status_filter,
         "total_assets": Device.objects.count(),
         "awaiting_assessment": Device.objects.filter(status=Device.Status.PENDING_ADMIN_ASSESMENT).count(),
-        "awaiting_sanitization": Device.objects.filter(status=Device.Status.SANITIZATION_PROCESSING).count(),
+        "awaiting_sanitization": Device.objects.filter(status__in=[
+            Device.Status.SANITIZATION_PROCESSING,
+            Device.Status.REPAIR_AND_SANITIZATION_PENDING,
+        ]).count(),
         "awaiting_repair": Device.objects.filter(status__in=[
             Device.Status.REPAIR_PROCESSING,
             Device.Status.REPAIR_AND_SANITIZATION_PENDING,
@@ -142,7 +148,17 @@ def overview(request):
 
 @it_admin_required
 def device_inventory(request):
-    devices = _searched_devices(Device.objects.select_related("owner", "self_assessment", "technical_assessment", "it_assessment").prefetch_related(_audit_logs_prefetch()), request.GET.get("q", "").strip())
+    devices = _searched_devices(
+        Device.objects.select_related(
+            "owner",
+            "self_assessment",
+            "technical_assessment",
+            "it_assessment",
+            "certificate",
+            "donation_ledger",
+        ).prefetch_related(_audit_logs_prefetch(), "repairs", "sanitization_jobs"),
+        request.GET.get("q", "").strip(),
+    )
     component = request.GET.get("component", "")
     condition = request.GET.get("condition", "")
     assessment_component = {"screen": "screen_status", "keyboard": "keyboard_status", "battery": "battery_status", "chassis": "chassis_status", "storage": "storage_status"}.get(component)
@@ -182,7 +198,11 @@ def register_device(request):
 
 @login_required
 def my_devices(request):
-    devices = Device.objects.filter(owner=request.user).select_related("owner", "self_assessment").prefetch_related(_audit_logs_prefetch())
+    devices = Device.objects.filter(owner=request.user).select_related(
+        "owner",
+        "self_assessment",
+        "certificate",
+    ).prefetch_related(_audit_logs_prefetch())
     return render(request, "laptops/my_devices.html", {"devices": devices})
 
 
@@ -206,7 +226,9 @@ def assessments(request):
 
     portal_queryset = Device.objects.exclude(
         status=Device.Status.REGISTERED
-    ).select_related("owner", "self_assessment", "it_assessment", "it_assessment_draft")
+    ).select_related(
+        "owner", "self_assessment", "it_assessment", "it_assessment_draft"
+    )
 
     portal_devices = []
     for device in portal_queryset.order_by("-created_at", "-pk"):
@@ -224,7 +246,11 @@ def assessments(request):
             category = "incomplete"
         else:
             category = "pending"
-        portal_devices.append({"device": device, "category": category, "assessment": assessment})
+        portal_devices.append({
+            "device": device,
+            "category": category,
+            "assessment": assessment,
+        })
 
     pending_queue = []
     for device in Device.objects.filter(status=Device.Status.IT_IN_PROGRESS).select_related("owner", "it_assessment_draft"):
@@ -365,7 +391,10 @@ def it_assessment(request, device_id=None):
             assessment.completed_at = timezone.now()
             assessment.save(update_fields=["completed_at", "updated_at"])
             ITAssessmentDraft.objects.filter(device=device).delete()
-            device.status = Device.Status.IT_ADMIN_ASSESMENT_COMPLETE
+            if device.status == Device.Status.REPAIR_AND_SANITIZATION_PENDING:
+                device.status = Device.Status.SANITIZATION_PROCESSING
+            else:
+                device.status = Device.Status.IT_ADMIN_ASSESMENT_COMPLETE
             device.save(update_fields=["status", "updated_at"])
 
             dispatch_report = request.POST.get("dispatch_report") == "yes"
@@ -489,6 +518,11 @@ def save_it_assessment_draft(request, device_id):
 def sanitization(request):
     eligible = Q(self_assessment__chosen_pathway__in=["SANITIZATION", "BOTH"]) & ~Q(status__in=[Device.Status.SANITIZED, Device.Status.FAILED, Device.Status.SANITIZATION_FAILED, Device.Status.COMPLETED, Device.Status.DONATED])
     devices = Device.objects.filter(eligible).distinct().select_related("owner").prefetch_related("sanitization_jobs")
+    for device in devices:
+        try:
+            device.assessment_completed = device.it_assessment.completed_at is not None
+        except ITAssessment.DoesNotExist:
+            device.assessment_completed = False
     sanitized_certificates = SanitizationCertificate.objects.select_related(
         "device",
         "device__owner",
@@ -544,12 +578,17 @@ def sanitization_execution(request, device_id):
         Device.objects.select_related("owner", "self_assessment", "it_assessment"),
         pk=device_id,
     )
+    try:
+        assessment_completed = device.it_assessment.completed_at is not None
+    except ITAssessment.DoesNotExist:
+        assessment_completed = False
     assessed_statuses = {
         Device.Status.IT_ADMIN_ASSESMENT_COMPLETE,
         Device.Status.SANITIZATION_PROCESSING,
         Device.Status.REPAIR_PROCESSING,
+        Device.Status.REPAIR_AND_SANITIZATION_PENDING,
     }
-    if device.status not in assessed_statuses:
+    if device.status not in assessed_statuses and not assessment_completed:
         raise Http404
 
     choices = {
@@ -566,6 +605,24 @@ def sanitization_execution(request, device_id):
             "Linux dd/nvme-cli",
         ],
         "pass_counts": ["1 Pass", "3 Passes", "7 Passes"],
+        "storage_media_types": [
+            "HDD (Hard Disk Drive)",
+            "SATA SSD",
+            "NVMe SSD",
+            "M.2 SSD",
+            "SSHD (Hybrid Drive)",
+            "eMMC Storage",
+            "USB Flash Drive",
+            "SD Card",
+            "microSD Card",
+            "CompactFlash Card",
+            "Magnetic Tape",
+            "Floppy Disk",
+            "CD",
+            "DVD",
+            "Blu-ray Disc",
+            "Unknown",
+        ],
     }
 
     if request.method == "POST":
@@ -601,7 +658,12 @@ def sanitization_execution(request, device_id):
                 **choices,
                 "posted": {**required_values, "technician_notes": notes},
             }, status=400)
-        if standard not in choices["standards"] or tool not in choices["tools"] or pass_count not in choices["pass_counts"]:
+        if (
+            standard not in choices["standards"]
+            or tool not in choices["tools"]
+            or pass_count not in choices["pass_counts"]
+            or media_type not in choices["storage_media_types"]
+        ):
             messages.error(request, "An invalid sanitization option was submitted.")
             return render(request, "laptops/sanitization_execution.html", {"device": device, **choices, "posted": required_values}, status=400)
 
@@ -644,12 +706,14 @@ def sanitization_execution(request, device_id):
     return render(request, "laptops/sanitization_execution.html", {"device": device, **choices, "posted": {}})
 
 
-@it_admin_required
+@login_required
 def sanitization_certificate(request, certificate_id):
     certificate = get_object_or_404(
         SanitizationCertificate.objects.select_related("device", "device__owner", "verified_by"),
         pk=certificate_id,
     )
+    if certificate.device.owner_id != request.user.pk and not request.user.is_it_admin():
+        raise PermissionDenied("You do not have access to this sanitization certificate.")
     return render(request, "laptops/sanitization_certificate.html", {
         "device": certificate.device,
         "certificate": certificate,
@@ -733,6 +797,10 @@ def repairs(request):
         device.it_diagnostic_flags = diagnostic_flags
         device.flagged_components = flagged_components
         try:
+            device.assessment_completed = device.it_assessment.completed_at is not None
+        except ITAssessment.DoesNotExist:
+            device.assessment_completed = False
+        try:
             assessment = device.technical_assessment
         except TechnicalAssessment.DoesNotExist:
             assessment = device.self_assessment
@@ -806,13 +874,17 @@ def repairs(request):
 @it_admin_required
 def repair_execution(request, device_id):
     device = get_object_or_404(Device.objects.select_related("owner", "self_assessment", "it_assessment", "technical_assessment"), pk=device_id)
+    try:
+        assessment_completed = device.it_assessment.completed_at is not None
+    except ITAssessment.DoesNotExist:
+        assessment_completed = False
     assessed_statuses = {
         Device.Status.IT_ADMIN_ASSESMENT_COMPLETE,
         Device.Status.REPAIR_PROCESSING,
         Device.Status.SANITIZATION_PROCESSING,
         Device.Status.REPAIR_AND_SANITIZATION_PENDING,
     }
-    if device.status not in assessed_statuses:
+    if device.status not in assessed_statuses and not assessment_completed:
         raise Http404
     _owner_flags, _diagnostic_flags, flagged_components = _repair_component_flags(device)
 
@@ -887,8 +959,11 @@ def disposition(request):
                     ledger.device.disbursement_approved = True
                     ledger.device.save(update_fields=["disbursement_approved", "updated_at"])
                 elif action == "reject_donation" and ledger.payout_status == DonationLedger.Status.PENDING:
-                    ledger.payout_status = DonationLedger.Status.REJECTED
                     ledger.rejection_reason = request.POST.get("rejection_reason", "").strip()
+                    if not ledger.rejection_reason:
+                        messages.error(request, "A rejection reason is required before the disbursement can be rejected.")
+                        return redirect("disposition")
+                    ledger.payout_status = DonationLedger.Status.REJECTED
                     ledger.device.disbursement_approved = False
                     ledger.device.save(update_fields=["disbursement_approved", "updated_at"])
                 elif action == "mark_paid" and ledger.payout_status == DonationLedger.Status.APPROVED:
@@ -1060,12 +1135,65 @@ def admin_access_decision(request, user_id, decision):
 
 @login_required
 def user_assessments_tab(request):
+    if request.method == "POST" and request.POST.get("action") == "accept_cashback_offer":
+        device = get_object_or_404(
+            Device.objects.filter(owner=request.user, status=Device.Status.IT_VERIFIED),
+            pk=request.POST.get("device"),
+        )
+        if request.POST.get("donation_terms") != "accepted":
+            messages.error(request, "You must accept the donation terms before submitting the device.")
+            return redirect("user_assessments_tab")
+        if DonationLedger.objects.filter(device=device).exists():
+            messages.error(request, "A cashback offer has already been accepted for this device.")
+            return redirect("user_assessments_tab")
+
+        valuation = calculate_device_valuation(device)
+        DonationLedger.objects.create(
+            device=device,
+            donated_by=request.user,
+            donation_value_kes=valuation["current_value"],
+            cashback_kes=valuation["cashback_amount"],
+            payout_status=DonationLedger.Status.PENDING,
+        )
+        CollectionSlot.objects.filter(device=device).delete()
+        device.status = Device.Status.DONATED
+        device.save(update_fields=["status", "updated_at"])
+        record_audit(
+            device,
+            request.user,
+            "Device donation accepted",
+            f"Owner accepted the voluntary donation and cashback offer of {format_kes(valuation['cashback_amount'])}.",
+        )
+        messages.success(request, "Offer accepted. Your device has been marked as donated.")
+        return redirect("user_assessments_tab")
+
     devices = (
         Device.objects.filter(owner=request.user)
         .exclude(status=Device.Status.REGISTERED)
-        .select_related("owner", "self_assessment", "it_assessment")
+        .select_related("owner", "self_assessment", "it_assessment", "certificate", "donation_ledger")
+        .prefetch_related("repairs")
         .order_by("-created_at", "-pk")
     )
+    for device in devices:
+        device.assessment_valuation = calculate_device_valuation(device)
+        device.assessment_repairable_parts = [
+            repair.component_name
+            for repair in device.repairs.all()
+            if repair.repair_result == "FIXED"
+        ]
+        device.assessment_non_repairable_parts = [
+            repair.component_name
+            for repair in device.repairs.all()
+            if repair.repair_result == "NOT_FIXED"
+        ]
+        device.assessment_faulty_parts = []
+        assessment = getattr(device, "it_assessment", None)
+        if assessment:
+            for module_name, (_weight, questions) in ITAssessmentScoringEngine.MODULES.items():
+                for field_name in questions:
+                    if getattr(assessment, field_name, "") in {"POOR", "SOMEWHAT"}:
+                        device.assessment_faulty_parts.append(module_name)
+                        break
     return render(request, "laptops/user_assessments.html", {"devices": devices})
 
 

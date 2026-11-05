@@ -31,7 +31,10 @@
       <input name="drive_serial_number" value="{{ posted.drive_serial_number }}" class="field mt-2" required>
     </label>
     <label class="text-xs font-bold uppercase text-slate-500 md:col-span-2">Storage Media Type
-      <input name="storage_media_type" value="{{ posted.storage_media_type }}" class="field mt-2" required>
+      <select name="storage_media_type" class="field mt-2" required>
+        <option value="">Select storage media type</option>
+        {% for option in storage_media_types %}<option value="{{ option }}" {% if posted.storage_media_type == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+      </select>
     </label>
     <label class="text-xs font-bold uppercase text-slate-500 md:col-span-2">Technician Evaluation Notes
       <textarea name="technician_notes" rows="4" class="field mt-2">{{ posted.technician_notes }}</textarea>
