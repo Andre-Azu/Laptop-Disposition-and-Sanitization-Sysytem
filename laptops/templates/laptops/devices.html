@@ -9,6 +9,7 @@
     <h1 class="mt-2 text-3xl font-extrabold">Device inventory</h1>
     <p class="mt-1 text-sm text-slate-500">Browse computers, assessments, repairs, and disposition details.</p>
   </div>
+  <a href="{% url 'register_device' %}" class="btn btn-primary">＋ Add device</a>
 </div>
 
 <form method="get" class="panel mb-6 grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-[minmax(0,1.5fr)_minmax(10rem,1fr)_auto_auto]">
@@ -66,12 +67,6 @@
 
     <div class="mt-auto flex flex-wrap items-center gap-2 border-t border-slate-100 px-5 py-3">
       <button type="button" class="btn btn-primary" onclick="document.getElementById('more-info-{{ device.pk }}').showModal()">More info</button>
-      {% if device.owner.email %}
-      <a href="mailto:{{ device.owner.email }}" class="btn btn-light">Email owner</a>
-      {% endif %}
-      {% if device.owner.phone_number %}
-      <a href="tel:{{ device.owner.phone_number }}" class="btn btn-light">Call owner</a>
-      {% endif %}
     </div>
 
     <dialog id="more-info-{{ device.pk }}" class="m-auto w-[min(94vw,760px)] rounded-lg p-0 shadow-2xl">
@@ -170,7 +165,7 @@
           <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Owner contact</p><h4 class="mt-1 font-extrabold">Device owner details</h4></div>
             <div class="flex gap-2">
-              {% if device.owner.email %}<a href="mailto:{{ device.owner.email }}?subject=Enquiry%20about%20{{ device.make|urlencode }}%20{{ device.model_name|urlencode }}" class="btn btn-primary">Contact by email</a>{% endif %}
+              {% if device.owner.email %}<a href="mailto:{{ device.owner.email }}?subject=Enquiry%20about%20{{ device.make|urlencode }}%20{{ device.model_name|urlencode }}" class="btn btn-primary">Email owner</a>{% endif %}
               {% if device.owner.phone_number %}<a href="tel:{{ device.owner.phone_number }}" class="btn btn-light">Call owner</a>{% endif %}
             </div>
           </div>

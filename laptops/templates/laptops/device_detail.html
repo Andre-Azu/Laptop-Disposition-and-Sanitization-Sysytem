@@ -1,57 +1,198 @@
 {% extends 'laptops/base.html' %}
+{% load laptops_extras %}
 {% block title %}{{ device.device_name }} | Device details{% endblock %}
 {% block content %}
-<div class="mb-6 flex items-end justify-between gap-4"><div><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">My devices / Device record</p><h1 class="mt-2 text-3xl font-extrabold">{{ device.device_name }}</h1><p class="mt-1 text-sm text-slate-500">{{ device.make }} {{ device.model_name }}</p></div><a class="btn btn-light" href="{% url 'my_devices' %}">← My devices</a></div>
-<section class="panel max-w-5xl p-5 md:p-7">
-<h2 class="text-lg font-extrabold">Device specifications</h2>
-<dl class="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 text-sm"><div><dt class="text-xs text-slate-500">Manufacturer</dt><dd class="mt-1 font-bold">{{ device.make }}</dd></div><div><dt class="text-xs text-slate-500">Model</dt><dd class="mt-1 font-bold">{{ device.model_name }}</dd></div><div><dt class="text-xs text-slate-500">Serial number</dt><dd class="mt-1 font-mono">{{ device.serial_number }}</dd></div><div><dt class="text-xs text-slate-500">Processor</dt><dd class="mt-1 font-bold">{{ device.processor }}</dd></div><div><dt class="text-xs text-slate-500">Memory</dt><dd class="mt-1 font-bold">{{ device.ram_gb }} GB RAM</dd></div><div><dt class="text-xs text-slate-500">Storage</dt><dd class="mt-1 font-bold">{{ device.storage_info }}</dd></div><div><dt class="text-xs text-slate-500">Purchase date</dt><dd class="mt-1 font-bold">{{ device.purchase_date|date:'d M Y' }}</dd></div><div><dt class="text-xs text-slate-500">Current status</dt><dd class="mt-1 font-bold">{{ device.get_status_display }}</dd></div><div><dt class="text-xs text-slate-500">Owner</dt><dd class="mt-1 font-bold">{{ device.owner.get_full_name|default:device.owner.username }}</dd></div></dl>
-{% if device.status == 'REGISTERED' %}
-<div class="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4"><p class="text-sm font-bold">This device needs a self-assessment.</p><p class="mt-1 text-xs text-slate-500">Complete the five-module diagnostic survey to help IT determine the service pathway.</p><a class="btn btn-primary mt-4" href="{% url 'self_assessment' %}?device={{ device.pk }}">Perform self-assessment</a></div>
-{% endif %}
-{% if device.self_assessment %}
-<section class="mt-8 border-t border-slate-100 pt-6">
-<div class="flex flex-wrap items-start justify-between gap-4"><div><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Diagnostic summary report</p><h2 class="mt-1 text-xl font-extrabold">Self-assessment</h2></div><div class="rounded-lg px-4 py-3 text-center {{ device.self_assessment.badge_class }}"><p class="text-2xl font-extrabold">{{ device.self_assessment.overall_health_score }}/100</p><p class="text-xs font-bold">{{ device.self_assessment.color_badge }}</p></div></div>
-<div class="mt-6 space-y-4">
-<div><div class="flex justify-between text-sm"><span>Storage &amp; Speed</span><b>{{ device.self_assessment.storage_speed_score }}/25</b></div><div class="mt-2 h-2 rounded bg-slate-100"><div class="h-2 rounded bg-brand" style="width: {{ device.self_assessment.storage_speed_percentage }}%"></div></div><p class="mt-1 text-xs text-slate-500">{{ device.self_assessment.get_storage_status_display }}</p></div>
-<div><div class="flex justify-between text-sm"><span>Display &amp; Screen</span><b>{{ device.self_assessment.display_screen_score }}/25</b></div><div class="mt-2 h-2 rounded bg-slate-100"><div class="h-2 rounded bg-brand" style="width: {{ device.self_assessment.display_screen_percentage }}%"></div></div><p class="mt-1 text-xs text-slate-500">{{ device.self_assessment.get_screen_status_display }}</p></div>
-<div><div class="flex justify-between text-sm"><span>Battery &amp; Power</span><b>{{ device.self_assessment.battery_power_score }}/20</b></div><div class="mt-2 h-2 rounded bg-slate-100"><div class="h-2 rounded bg-brand" style="width: {{ device.self_assessment.battery_power_percentage }}%"></div></div><p class="mt-1 text-xs text-slate-500">{{ device.self_assessment.get_battery_status_display }}</p></div>
-<div><div class="flex justify-between text-sm"><span>Keyboard &amp; Touchpad</span><b>{{ device.self_assessment.keyboard_touchpad_score }}/15</b></div><div class="mt-2 h-2 rounded bg-slate-100"><div class="h-2 rounded bg-brand" style="width: {{ device.self_assessment.keyboard_touchpad_percentage }}%"></div></div><p class="mt-1 text-xs text-slate-500">{{ device.self_assessment.get_keyboard_status_display }}</p></div>
-<div><div class="flex justify-between text-sm"><span>Body / Chassis</span><b>{{ device.self_assessment.body_chassis_score }}/15</b></div><div class="mt-2 h-2 rounded bg-slate-100"><div class="h-2 rounded bg-brand" style="width: {{ device.self_assessment.body_chassis_percentage }}%"></div></div><p class="mt-1 text-xs text-slate-500">{{ device.self_assessment.get_chassis_status_display }}</p></div>
-</div>
-<div class="mt-6 grid gap-4 rounded-lg bg-slate-50 p-4 sm:grid-cols-2"><div><p class="text-xs text-slate-500">Overall Health Score</p><p class="mt-1 text-lg font-extrabold">{{ device.self_assessment.overall_health_score }} out of 100</p></div><div><p class="text-xs text-slate-500">Selected service pathway</p><p class="mt-1 text-lg font-extrabold">{{ device.self_assessment.get_chosen_pathway_display }}</p></div></div>
-{% if device.self_assessment.notes %}<div class="mt-4"><p class="text-xs text-slate-500">Additional notes</p><p class="mt-1 text-sm">{{ device.self_assessment.notes }}</p></div>{% endif %}
-</section>
-{% endif %}
-
-{% if device.self_assessment or device.it_assessment %}
-<section class="mt-8 border-t border-slate-100 pt-6">
-  <div class="mb-5"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Assessment comparison</p><h2 class="mt-1 text-xl font-extrabold text-navy">Device and IT verification ratings</h2></div>
-  <div class="grid gap-4 lg:grid-cols-2">
-    <article class="rounded-xl border border-slate-200 bg-slate-50 p-5">
-      <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Device manager assessment</p><h3 class="mt-1 font-extrabold text-navy">Owner self-assessment</h3></div>{% if device.self_assessment %}<span class="rounded-lg bg-white px-3 py-2 text-lg font-extrabold text-navy shadow-sm">{{ device.self_assessment.overall_health_score }}/100</span>{% endif %}</div>
-      {% if device.self_assessment %}
-      <div class="mt-5 space-y-3 text-sm">
-        <div class="flex justify-between gap-4 rounded-lg bg-white px-3 py-2"><span>Display &amp; Screen</span><b>{{ device.self_assessment.get_screen_status_display }}</b></div>
-        <div class="flex justify-between gap-4 rounded-lg bg-white px-3 py-2"><span>Battery &amp; Power</span><b>{{ device.self_assessment.get_battery_status_display }}</b></div>
-        <div class="flex justify-between gap-4 rounded-lg bg-white px-3 py-2"><span>Keyboard &amp; Touchpad</span><b>{{ device.self_assessment.get_keyboard_status_display }}</b></div>
-        <div class="flex justify-between gap-4 rounded-lg bg-white px-3 py-2"><span>Performance &amp; Storage</span><b>{{ device.self_assessment.get_storage_status_display }}</b></div>
-        <div class="flex justify-between gap-4 rounded-lg bg-white px-3 py-2"><span>Outer Casing</span><b>{{ device.self_assessment.get_chassis_status_display }}</b></div>
-      </div>
-      <div class="mt-4 rounded-lg border border-slate-200 bg-white p-3"><p class="text-xs text-slate-500">Selected service pathway</p><p class="mt-1 font-bold text-navy">{{ device.self_assessment.get_chosen_pathway_display }}</p></div>
-      {% else %}<p class="mt-5 text-sm text-slate-500">No owner assessment has been submitted.</p>{% endif %}
-    </article>
-
-    <article class="rounded-xl border border-brand/10 bg-brand/5 p-5">
-      <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-bold uppercase tracking-wide text-brand">IT administrator assessment</p><h3 class="mt-1 font-extrabold text-navy">Technical verification</h3></div>{% if device.it_assessment %}<span class="rounded-lg bg-white px-3 py-2 text-lg font-extrabold text-navy shadow-sm">{{ device.it_assessment.overall_score|floatformat:1 }}/100</span>{% endif %}</div>
-      {% if device.it_assessment %}
-      <p class="mt-4 rounded-lg border border-brand/10 bg-white px-3 py-2 text-sm font-bold text-navy">{{ device.it_assessment.rating_label }}</p>
-      <div class="mt-4 space-y-3">
-        {% for name, score in device.it_assessment.module_scores.items %}<div class="rounded-lg bg-white px-3 py-2"><div class="flex justify-between gap-3 text-sm"><span class="font-semibold text-navy">{{ name }}</span><b class="text-slate-600">{% if score != None %}{{ score|floatformat:1 }}%{% else %}N/A{% endif %}</b></div></div>{% endfor %}
-      </div>
-      {% else %}<p class="mt-5 text-sm text-slate-500">No IT administrator assessment has been submitted.</p>{% endif %}
-    </article>
+<div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+  <div>
+    <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Asset record / Complete lifecycle</p>
+    <div class="mt-2 flex flex-wrap items-center gap-3">
+      <h1 class="text-3xl font-extrabold">{{ device.device_name }}</h1>
+      <span class="rounded-full bg-navy px-3 py-1.5 text-xs font-bold text-white">{{ device.get_status_display }}</span>
+    </div>
+    <p class="mt-1 text-sm text-slate-500">{{ device.make }} {{ device.model_name }} · {{ device.serial_number }}</p>
   </div>
-</section>
+  <a class="btn btn-light" href="{% if user.is_it_admin %}{% url 'devices' %}{% else %}{% url 'my_devices' %}{% endif %}">← Back</a>
+</div>
+
+<div class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+  <div class="panel border-l-4 border-l-brand p-5"><p class="text-xs font-bold uppercase text-slate-500">Acquired value</p><p class="mt-2 text-2xl font-extrabold">{{ valuation.acquired_value|kes_format }}</p></div>
+  <div class="panel border-l-4 border-l-forest p-5"><p class="text-xs font-bold uppercase text-slate-500">Current valuation</p><p class="mt-2 text-2xl font-extrabold">{{ valuation.current_value|kes_format }}</p></div>
+  <div class="panel border-l-4 border-l-gold p-5"><p class="text-xs font-bold uppercase text-slate-500">Cashback estimate</p><p class="mt-2 text-2xl font-extrabold">{{ valuation.cashback_amount|kes_format }}</p></div>
+  <div class="panel border-l-4 border-l-slate-400 p-5"><p class="text-xs font-bold uppercase text-slate-500">Lifecycle stage</p><p class="mt-2 text-lg font-extrabold">{{ device.get_status_display }}</p></div>
+</div>
+
+<div class="grid gap-6 xl:grid-cols-[.72fr_1.28fr]">
+  <aside class="space-y-6">
+    <section class="panel p-5">
+      <div class="border-b border-slate-100 pb-4"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Identity</p><h2 class="mt-1 text-lg font-extrabold">Device information</h2></div>
+      <dl class="mt-4 grid grid-cols-1 gap-x-4 gap-y-4 text-sm sm:grid-cols-2 xl:grid-cols-1">
+        <div><dt class="text-xs text-slate-500">Owner</dt><dd class="mt-1 font-bold">{{ device.owner.get_full_name|default:device.owner.username }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Device nickname</dt><dd class="mt-1 font-bold">{{ device.device_name }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Manufacturer / model</dt><dd class="mt-1 font-bold">{{ device.make }} {{ device.model_name }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Serial number</dt><dd class="mt-1 break-all font-mono font-bold">{{ device.serial_number }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Processor</dt><dd class="mt-1 font-bold">{{ device.processor }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Memory / storage</dt><dd class="mt-1 font-bold">{{ device.ram_gb }} GB RAM · {{ device.storage_info }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Purchase date</dt><dd class="mt-1 font-bold">{{ device.purchase_date|date:'d M Y' }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Acquisition period</dt><dd class="mt-1 font-bold">{{ device.acquisition_period|default:"Not recorded" }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Added to system</dt><dd class="mt-1 font-bold">{{ device.created_at|date:'d M Y, H:i' }}</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel p-5">
+      <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Service pathway</p>
+      {% if device.self_assessment %}
+      <h2 class="mt-1 text-lg font-extrabold">{{ device.self_assessment.get_chosen_pathway_display }}</h2>
+      <div class="mt-4 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
+        <span class="text-sm font-semibold">Pathway status</span>
+        {% if pathway_completed %}<span class="badge bg-green-100 text-forest">Completed</span>{% else %}<span class="badge bg-amber-100 text-amber">In progress / Pending</span>{% endif %}
+      </div>
+      <div class="mt-3 space-y-2">
+        {% for name, completed in pathway_status.components %}
+        <div class="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm">
+          <span class="font-semibold">{{ name }}</span>
+          {% if completed %}<span class="font-bold text-forest">{{ name }}: Complete</span>{% else %}<span class="font-bold text-amber">{{ name }}: Not complete</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% if device.self_assessment.notes %}<p class="mt-3 rounded-lg border border-slate-200 p-3 text-sm">{{ device.self_assessment.notes }}</p>{% endif %}
+      {% else %}
+      <p class="mt-3 text-sm text-slate-500">No service pathway has been selected.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel p-5">
+      <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Financial record</p>
+      <dl class="mt-4 space-y-3 text-sm">
+        <div class="flex justify-between gap-4"><dt class="text-slate-500">Original value</dt><dd class="font-bold">{{ valuation.acquired_value|kes_format }}</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-slate-500">Retained current value</dt><dd class="font-bold">{{ valuation.current_value|kes_format }}</dd></div>
+        <div class="flex justify-between gap-4 border-t border-slate-100 pt-3"><dt class="text-slate-500">Cashback</dt><dd class="font-extrabold text-forest">{{ valuation.cashback_amount|kes_format }}</dd></div>
+        {% if device.donation_ledger %}
+        <div class="flex justify-between gap-4"><dt class="text-slate-500">Donation value</dt><dd class="font-bold">{{ device.donation_ledger.donation_value_kes|kes_format }}</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-slate-500">Payout status</dt><dd class="font-bold">{{ device.donation_ledger.get_payout_status_display }}</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-slate-500">Transaction reference</dt><dd class="break-all font-mono font-bold">{{ device.donation_ledger.transaction_ref }}</dd></div>
+        {% endif %}
+      </dl>
+    </section>
+  </aside>
+
+  <main class="space-y-6">
+    <section class="panel overflow-hidden">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <div><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Health ratings</p><h2 class="mt-1 text-lg font-extrabold">Assessment results</h2></div>
+        <div class="text-right"><p class="text-xs text-slate-500">IT assessment</p><p class="text-lg font-extrabold">{{ device.it_assessment.overall_score|default:device.self_assessment.overall_health_score|default:"Not rated"|floatformat:0 }}{% if device.it_assessment %}%{% endif %}</p></div>
+      </div>
+      <div class="grid gap-4 p-5 lg:grid-cols-2">
+        <article class="rounded-xl border border-slate-200 bg-slate-50 p-5">
+          <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-bold uppercase text-slate-500">Device owner</p><h3 class="mt-1 font-extrabold">Self-assessment</h3></div>{% if device.self_assessment %}<span class="rounded-lg bg-white px-3 py-2 text-xl font-extrabold shadow-sm">{{ device.self_assessment.overall_health_score }}/100</span>{% endif %}</div>
+          {% if device.self_assessment %}
+          <div class="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+            <div class="rounded-lg bg-white px-3 py-2"><p class="text-xs text-slate-500">Screen</p><b>{{ device.self_assessment.get_screen_status_display }}</b></div>
+            <div class="rounded-lg bg-white px-3 py-2"><p class="text-xs text-slate-500">Keyboard</p><b>{{ device.self_assessment.get_keyboard_status_display }}</b></div>
+            <div class="rounded-lg bg-white px-3 py-2"><p class="text-xs text-slate-500">Battery</p><b>{{ device.self_assessment.get_battery_status_display }}</b></div>
+            <div class="rounded-lg bg-white px-3 py-2"><p class="text-xs text-slate-500">Chassis</p><b>{{ device.self_assessment.get_chassis_status_display }}</b></div>
+            <div class="rounded-lg bg-white px-3 py-2 sm:col-span-2"><p class="text-xs text-slate-500">Storage</p><b>{{ device.self_assessment.get_storage_status_display }}</b></div>
+          </div>
+          {% else %}<p class="mt-5 text-sm text-slate-500">Not yet submitted.</p>{% endif %}
+        </article>
+
+        <article class="rounded-xl border border-brand/10 bg-brand/5 p-5">
+          <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-bold uppercase text-brand">IT administrator</p><h3 class="mt-1 font-extrabold">Technical assessment</h3></div>{% if device.it_assessment %}<span class="rounded-lg bg-white px-3 py-2 text-xl font-extrabold shadow-sm">{{ device.it_assessment.overall_score|floatformat:0 }}%</span>{% endif %}</div>
+          {% if device.it_assessment %}
+          <p class="mt-3 text-sm font-bold {{ device.it_assessment.rating_tailwind }}">{{ device.it_assessment.rating_label }}</p>
+          {% if device.it_assessment.assessed_by %}<p class="mt-2 text-xs text-slate-500">Assessed by {{ device.it_assessment.assessed_by.get_full_name|default:device.it_assessment.assessed_by.username }}</p>{% endif %}
+          {% if device.it_assessment.completed_at %}<p class="text-xs text-slate-500">Completed {{ device.it_assessment.completed_at|date:'d M Y, H:i' }}</p>{% endif %}
+          <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {% for name, score in device.it_assessment.module_scores.items %}
+            <div class="rounded-lg bg-white px-3 py-2"><div class="flex justify-between gap-2"><span class="text-xs text-slate-500">{{ name }}</span><b>{% if score != None %}{{ score|floatformat:0 }}%{% else %}N/A{% endif %}</b></div></div>
+            {% endfor %}
+          </div>
+          {% if device.it_assessment.notes %}<p class="mt-4 rounded-lg bg-white p-3 text-sm">{{ device.it_assessment.notes }}</p>{% endif %}
+          {% else %}<p class="mt-5 text-sm text-slate-500">Not yet assessed by IT.</p>{% endif %}
+        </article>
+      </div>
+      {% if device.technical_assessment %}
+      <div class="border-t border-slate-100 px-5 py-4">
+        <p class="mb-3 text-xs font-bold uppercase text-slate-500">Component technical verification</p>
+        <div class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
+          <div class="rounded-lg border border-slate-200 px-3 py-2"><span class="text-xs text-slate-500">Screen</span><p class="font-bold">{{ device.technical_assessment.get_screen_status_display }}</p></div>
+          <div class="rounded-lg border border-slate-200 px-3 py-2"><span class="text-xs text-slate-500">Keyboard</span><p class="font-bold">{{ device.technical_assessment.get_keyboard_status_display }}</p></div>
+          <div class="rounded-lg border border-slate-200 px-3 py-2"><span class="text-xs text-slate-500">Battery</span><p class="font-bold">{{ device.technical_assessment.get_battery_status_display }}</p></div>
+          <div class="rounded-lg border border-slate-200 px-3 py-2"><span class="text-xs text-slate-500">Chassis</span><p class="font-bold">{{ device.technical_assessment.get_chassis_status_display }}</p></div>
+          <div class="rounded-lg border border-slate-200 px-3 py-2"><span class="text-xs text-slate-500">Storage</span><p class="font-bold">{{ device.technical_assessment.get_storage_status_display }}</p></div>
+        </div>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="panel overflow-hidden">
+      <div class="border-b border-slate-100 px-5 py-4"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Repair record</p><h2 class="mt-1 text-lg font-extrabold">Component repair history</h2></div>
+      <div class="divide-y divide-slate-100">
+        {% for repair in repairs %}
+        <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div><p class="font-bold">{{ repair.component_name }}</p><p class="mt-1 text-xs text-slate-500">{{ repair.comments|default:"No technician notes" }}{% if repair.technician %} · {{ repair.technician.get_full_name|default:repair.technician.username }}{% endif %}</p></div>
+          <div class="text-right"><span class="badge {% if repair.repair_result == 'FIXED' %}bg-green-100 text-forest{% else %}bg-red-100 text-danger{% endif %}">{% if repair.repair_result == 'FIXED' %}Repaired{% else %}Not repaired{% endif %}</span><p class="mt-1 text-[11px] text-slate-400">{{ repair.created_at|date:'d M Y, H:i' }}</p></div>
+        </div>
+        {% empty %}<p class="px-5 py-7 text-sm text-slate-500">No repair evaluations have been recorded.</p>{% endfor %}
+      </div>
+      {% if device.repair_tag %}<div class="border-t border-slate-100 bg-slate-50 px-5 py-3 text-sm"><b>Repair tag:</b> {{ device.repair_tag }}</div>{% endif %}
+    </section>
+
+    <section class="panel overflow-hidden">
+      <div class="border-b border-slate-100 px-5 py-4"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Data sanitization</p><h2 class="mt-1 text-lg font-extrabold">Wiping and verification record</h2></div>
+      <div class="p-5">
+        {% if device.certificate %}
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div><p class="text-xs text-slate-500">Certificate code</p><p class="mt-1 break-all font-mono font-bold">{{ device.certificate.cert_code }}</p></div>
+          <div><p class="text-xs text-slate-500">Issued</p><p class="mt-1 font-bold">{{ device.certificate.issued_at|date:'d M Y, H:i' }}</p></div>
+          <div><p class="text-xs text-slate-500">Verified by</p><p class="mt-1 font-bold">{{ device.certificate.verified_by.get_full_name|default:device.certificate.verified_by.username }}</p></div>
+          <div><p class="text-xs text-slate-500">Wipe method</p><p class="mt-1 font-bold">{{ device.certificate.wipe_method }}</p></div>
+          <div><p class="text-xs text-slate-500">Sanitization standard</p><p class="mt-1 font-bold">{{ device.certificate.sanitization_standard|default:"Not recorded" }}</p></div>
+          <div><p class="text-xs text-slate-500">Tool used</p><p class="mt-1 font-bold">{{ device.certificate.tool_used|default:"Not recorded" }}</p></div>
+          <div><p class="text-xs text-slate-500">Pass count</p><p class="mt-1 font-bold">{{ device.certificate.pass_count|default:"Not recorded" }}</p></div>
+          <div><p class="text-xs text-slate-500">Drive serial</p><p class="mt-1 font-mono font-bold">{{ device.certificate.drive_serial_number|default:"Not recorded" }}</p></div>
+          <div><p class="text-xs text-slate-500">Storage media</p><p class="mt-1 font-bold">{{ device.certificate.storage_media_type|default:"Not recorded" }}</p></div>
+        </div>
+        {% if device.certificate.technician_notes %}<p class="mt-4 rounded-lg bg-slate-50 p-4 text-sm">{{ device.certificate.technician_notes }}</p>{% endif %}
+        <a href="{% url 'sanitization_certificate' device.certificate.pk %}" class="btn btn-primary mt-4">View certificate</a>
+        {% else %}<p class="text-sm text-slate-500">No sanitization certificate has been issued.</p>{% endif %}
+        {% for job in sanitization_jobs %}
+        <div class="mt-3 flex justify-between rounded-lg border border-slate-200 px-4 py-3 text-sm"><span>Sanitization job · {{ job.started_at|date:'d M Y, H:i' }}</span><b>{{ job.get_status_display|default:job.status }}</b></div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel overflow-hidden">
+      <div class="border-b border-slate-100 px-5 py-4"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Disposition and collection</p><h2 class="mt-1 text-lg font-extrabold">Final outcome</h2></div>
+      <div class="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div><p class="text-xs text-slate-500">Disbursement decision</p><p class="mt-1 font-bold">{% if device.disbursement_approved %}Approved{% elif device.status == 'DISBURSEMENT_DENIED' %}Denied{% else %}Pending{% endif %}</p></div>
+        {% if device.donation_ledger %}
+        <div><p class="text-xs text-slate-500">Donation status</p><p class="mt-1 font-bold">{{ device.donation_ledger.get_payout_status_display }}</p></div>
+        <div><p class="text-xs text-slate-500">Donated</p><p class="mt-1 font-bold">{{ device.donation_ledger.donated_at|date:'d M Y, H:i' }}</p></div>
+        {% if device.donation_ledger.rejection_reason %}<div class="sm:col-span-2 lg:col-span-3"><p class="text-xs text-slate-500">Rejection reason</p><p class="mt-1 text-sm">{{ device.donation_ledger.rejection_reason }}</p></div>{% endif %}
+        {% endif %}
+      </div>
+      {% for slot in collection_slots %}
+      <div class="border-t border-slate-100 px-5 py-4">
+        <div class="flex flex-wrap justify-between gap-3 text-sm"><div><p class="font-bold">Collection slot</p><p class="mt-1 text-xs text-slate-500">{{ slot.location }} · {{ slot.scheduled_for|date:'d M Y, H:i' }}</p></div><span class="badge {% if slot.collected %}bg-green-100 text-forest{% elif slot.approved %}bg-blue-100 text-brand{% else %}bg-amber-100 text-amber{% endif %}">{% if slot.collected %}Collected{% elif slot.approved %}Approved{% else %}Pending approval{% endif %}</span></div>
+      </div>
+      {% empty %}<p class="border-t border-slate-100 px-5 py-4 text-sm text-slate-500">No collection appointment has been scheduled.</p>{% endfor %}
+    </section>
+
+    <section class="panel overflow-hidden">
+      <div class="border-b border-slate-100 px-5 py-4"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Audit trail</p><h2 class="mt-1 text-lg font-extrabold">Complete activity history</h2></div>
+      <div class="px-5 py-5">
+        <ol class="border-l-2 border-brand/20 pl-5">
+          {% for log in audit_logs %}
+          <li class="relative pb-6 last:pb-0"><span class="absolute -left-[29px] top-1 h-3 w-3 rounded-full border-2 border-white bg-gold shadow"></span><div class="flex flex-wrap items-start justify-between gap-2"><div><p class="font-bold">{{ log.action_stage }}</p><p class="mt-1 text-sm text-slate-500">{{ log.description }}</p></div><p class="text-[11px] text-slate-400">{{ log.timestamp|date:'d M Y, H:i' }}</p></div>{% if log.actor %}<p class="mt-1 text-xs text-slate-400">By {{ log.actor.get_full_name|default:log.actor.username }}</p>{% endif %}</li>
+          {% empty %}
+          <li><p class="text-sm text-slate-500">Device added {{ device.created_at|date:'d M Y, H:i' }}. No additional audit events have been recorded.</p></li>
+          {% endfor %}
+        </ol>
+      </div>
+    </section>
+  </main>
+</div>
+{% if device.status == 'REGISTERED' and device.owner == user %}
+<div class="mt-6 rounded-xl border border-brand/20 bg-brand/5 p-5"><p class="font-bold">Next step: complete the owner self-assessment.</p><a class="btn btn-primary mt-3" href="{% url 'self_assessment' %}?device={{ device.pk }}">Perform self-assessment</a></div>
 {% endif %}
-</section>
 {% endblock %}

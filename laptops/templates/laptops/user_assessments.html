@@ -2,158 +2,207 @@
 {% load laptops_extras %}
 {% block title %}Assessments | Strathmore Laptop Recovery{% endblock %}
 {% block content %}
-<div class="mb-6">
-  <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Owner portal / Assessment reports</p>
-  <h1 class="mt-2 text-3xl font-extrabold text-navy">Assessments</h1>
-  <p class="mt-1 text-sm text-slate-500">Review your self-assessment and IT verification results.</p>
+<div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+  <div>
+    <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Owner portal / Assessment reports</p>
+    <h1 class="mt-1 text-3xl font-extrabold text-navy">Device Assessments</h1>
+    <p class="mt-1 text-sm text-slate-500">Compare owner and IT results across every device.</p>
+  </div>
+  <div class="rounded-md border border-slate-200 bg-white px-3 py-2 text-right">
+    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Devices shown</p>
+    <p class="text-xl font-extrabold text-navy">{{ devices|length }}</p>
+  </div>
 </div>
 
-<div class="space-y-5">
+<div class="space-y-4">
   {% for laptop in devices %}
   <section class="panel overflow-hidden">
-    <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 md:px-6">
-      <div>
-        <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Device</p>
-        <h2 class="mt-1 text-lg font-extrabold text-navy">{{ laptop.device_name }}</h2>
-        <div class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-600">
-          <span><span class="font-semibold text-slate-500">Make / Model:</span> {{ laptop.make }} {{ laptop.model_name }}</span>
-          <span><span class="font-semibold text-slate-500">Serial Number:</span> {{ laptop.serial_number }}</span>
-          <span><span class="font-semibold text-slate-500">Acquisition Date:</span> {% if laptop.purchase_date %}{{ laptop.purchase_date|date:'d M Y' }}{% elif laptop.acquisition_period %}{{ laptop.acquisition_period }}{% else %}Not recorded{% endif %}</span>
-        </div>
-      </div>
-      <div class="flex flex-wrap items-center justify-end gap-2">
-        <span class="badge rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">{% if laptop.certificate %}Sanitization Complete{% elif laptop.status == 'SANITIZATION_FAILED' or laptop.sanitization_tag == 'SANITIZATION_FAILED' %}Sanitization Failed{% else %}{{ laptop.get_status_display }}{% endif %}</span>
-        {% if laptop.certificate %}<a href="{% url 'sanitization_certificate' laptop.certificate.pk %}" class="btn btn-primary">View Sanitization Certificate</a>{% endif %}
-      </div>
-    </div>
-
-    <section class="border-b border-slate-200 bg-slate-50/70 px-5 py-5 md:px-6">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p class="text-xs font-bold uppercase tracking-[.14em] text-brand">Computer valuation</p>
-          <p class="mt-1 text-sm text-slate-500">Based on the acquired value and verified component condition</p>
-        </div>
-      </div>
-      <dl class="grid gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-3">
-        <div class="bg-white px-4 py-4"><dt class="text-xs font-bold uppercase text-slate-500">Acquired value</dt><dd class="mt-1 text-lg font-extrabold text-navy">{{ laptop.assessment_valuation.acquired_value|kes_format }}</dd></div>
-        <div class="bg-white px-4 py-4"><dt class="text-xs font-bold uppercase text-slate-500">Current value</dt><dd class="mt-1 text-lg font-extrabold text-navy">{{ laptop.assessment_valuation.current_value|kes_format }}</dd></div>
-        <div class="bg-emerald-50 px-4 py-4"><dt class="text-xs font-bold uppercase text-emerald-700">School cashback offer</dt><dd class="mt-1 text-lg font-extrabold text-emerald-700">{{ laptop.assessment_valuation.cashback_amount|kes_format }}</dd></div>
-      </dl>
-
-      {% if laptop.it_assessment %}
-        {% if laptop.status == 'IT_Admin_assesment_complete' and not laptop.donation_ledger %}
-        <div class="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4" role="alert">
-          <div class="flex gap-3">
-            <span class="text-xl" aria-hidden="true">⚠</span>
-            <div>
-              <p class="font-extrabold text-amber-900">Donation warning</p>
-              <p class="mt-1 text-sm text-amber-900">Accepting this offer means you willingly give this device to the school as a donation. The device will be marked as donated and will no longer be available for collection scheduling.</p>
-              <p class="mt-2 text-sm text-amber-900">You agree to the donation terms and conditions. The IT Administrator may reject approval of the cashback disbursement.</p>
-            </div>
-          </div>
-          <form method="post" class="mt-4 rounded-lg bg-white/70 p-3">{% csrf_token %}
-            <input type="hidden" name="action" value="accept_cashback_offer">
-            <input type="hidden" name="device" value="{{ laptop.pk }}">
-            <label class="flex items-start gap-3 text-sm text-slate-700">
-              <input type="checkbox" name="donation_terms" value="accepted" required class="mt-1 h-4 w-4">
-              <span>I have read and accept the donation terms and conditions and confirm that I am willingly donating this device.</span>
-            </label>
-            <button class="btn mt-4 w-full bg-gold text-white" type="submit">Accept offer and donate my device</button>
-          </form>
-        </div>
-        {% elif laptop.donation_ledger %}
-        <div class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <p class="text-sm font-bold text-navy">Donation and cashback status</p>
-            {% if laptop.donation_ledger.payout_status == 'REJECTED' %}<span class="badge bg-red-100 text-danger">Disbursement rejected</span>{% elif laptop.donation_ledger.payout_status == 'APPROVED' %}<span class="badge bg-blue-100 text-blue-700">Disbursement approved</span>{% elif laptop.donation_ledger.payout_status == 'PAID' %}<span class="badge bg-green-100 text-forest">Cashback paid</span>{% else %}<span class="badge bg-amber-100 text-amber">Pending disbursement approval</span>{% endif %}
-          </div>
-          {% if laptop.donation_ledger.rejection_reason %}
-          <p class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-danger"><strong>IT Administrator rejection reason:</strong> {{ laptop.donation_ledger.rejection_reason }}</p>
+    <header class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 md:px-5">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-lg font-extrabold text-navy">{{ laptop.device_name }}</h2>
+          {% if laptop.assessment_stage == 'POST_REPAIR' %}
+            <span class="badge border border-violet-200 bg-violet-50 text-violet-700">Post-repair assessment</span>
+          {% elif laptop.assessment_stage == 'IT_INITIAL' %}
+            <span class="badge border border-amber-200 bg-amber-50 text-amber-700">IT initial assessment</span>
+          {% elif laptop.assessment_stage == 'OWNER_ONLY' %}
+            <span class="badge border border-sky-200 bg-sky-50 text-sky-700">Owner assessment</span>
+          {% else %}
+            <span class="badge border border-slate-200 bg-slate-50 text-slate-600">Assessment pending</span>
           {% endif %}
         </div>
-        {% endif %}
-      {% endif %}
-
-      {% if laptop.assessment_faulty_parts or laptop.assessment_repairable_parts or laptop.assessment_non_repairable_parts %}
-      <div class="mt-4 grid gap-3 md:grid-cols-3">
-        <div class="rounded-lg border border-rose-100 bg-white p-3"><p class="text-xs font-bold uppercase text-rose-700">Faulty / affected parts</p><p class="mt-2 text-sm text-slate-700">{% if laptop.assessment_faulty_parts %}{{ laptop.assessment_faulty_parts|join:", " }}{% else %}None recorded in the IT assessment{% endif %}</p></div>
-        <div class="rounded-lg border border-blue-100 bg-white p-3"><p class="text-xs font-bold uppercase text-blue-700">Repairable parts</p><p class="mt-2 text-sm text-slate-700">{% if laptop.assessment_repairable_parts %}{{ laptop.assessment_repairable_parts|join:", " }}{% else %}None recorded{% endif %}</p></div>
-        <div class="rounded-lg border border-amber-200 bg-white p-3"><p class="text-xs font-bold uppercase text-amber-700">Non-repairable parts</p><p class="mt-2 text-sm text-slate-700">{% if laptop.assessment_non_repairable_parts %}{{ laptop.assessment_non_repairable_parts|join:", " }}{% else %}None recorded{% endif %}</p></div>
+        <p class="mt-1 text-xs text-slate-500">{{ laptop.make }} {{ laptop.model_name }} <span class="mx-1 text-slate-300">|</span> SN {{ laptop.serial_number }}</p>
       </div>
-      {% endif %}
-    </section>
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <span class="badge border border-slate-200 bg-slate-50 text-slate-700">{{ laptop.get_status_display }}</span>
+        {% if laptop.certificate %}<a href="{% url 'sanitization_certificate' laptop.certificate.pk %}" class="btn btn-primary">Certificate</a>{% endif %}
+      </div>
+    </header>
 
-    <div class="grid gap-0 md:grid-cols-2">
-      <article class="border-b border-slate-200 bg-sky-50 p-5 md:border-b-0 md:border-r md:p-6">
-        <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="grid divide-y divide-slate-200 lg:grid-cols-[1fr_1fr_240px] lg:divide-x lg:divide-y-0">
+      <article class="p-4 md:p-5">
+        <div class="flex items-start justify-between gap-3">
           <div>
-            <p class="text-xs font-bold uppercase tracking-[.14em] text-sky-700">My Self-Assessment</p>
-            {% if laptop.self_assessment %}
-              <p class="mt-2 text-4xl font-extrabold text-navy">{{ laptop.self_assessment.overall_score }} <span class="text-base text-slate-500">/ 100</span></p>
-              <span class="mt-3 inline-flex rounded-full px-3 py-1 text-xs font-bold {{ laptop.self_assessment.health_badge_color }}">{{ laptop.self_assessment.condition_label }}</span>
-            {% else %}
-              <p class="mt-3 text-sm font-bold text-slate-600">Self-assessment not submitted</p>
-            {% endif %}
+            <p class="text-[10px] font-bold uppercase tracking-[.14em] text-sky-700">Device owner</p>
+            <p class="mt-1 text-xs text-slate-500">My self-assessment</p>
           </div>
+          {% if laptop.self_assessment %}
+            <span class="rounded-md bg-sky-50 px-2.5 py-1 text-lg font-extrabold text-navy">{{ laptop.self_assessment.overall_score }}<span class="text-xs text-slate-500">/100</span></span>
+          {% endif %}
         </div>
-
         {% if laptop.self_assessment %}
-        <details class="group mt-5">
-          <summary class="cursor-pointer list-none rounded-lg bg-navy px-4 py-3 text-center text-sm font-bold text-white [&::-webkit-details-marker]:hidden">View My Full Report <span class="ml-2 group-open:inline-block group-open:rotate-180">⌄</span></summary>
-          <div class="mt-3 rounded-b-xl border border-sky-200 bg-white/80 p-4 text-sm">
-            <p class="mb-3 text-xs font-bold uppercase tracking-wide text-sky-700">Owner answers &amp; chosen pathway</p>
-            <dl class="grid gap-2 sm:grid-cols-2">
-              <div class="rounded-lg bg-sky-50 px-3 py-2"><dt class="text-xs text-slate-500">Display / Screen</dt><dd class="font-bold text-navy">{{ laptop.self_assessment.get_screen_status_display }}</dd></div>
-              <div class="rounded-lg bg-sky-50 px-3 py-2"><dt class="text-xs text-slate-500">Keyboard</dt><dd class="font-bold text-navy">{{ laptop.self_assessment.get_keyboard_status_display }}</dd></div>
-              <div class="rounded-lg bg-sky-50 px-3 py-2"><dt class="text-xs text-slate-500">Battery &amp; Power</dt><dd class="font-bold text-navy">{{ laptop.self_assessment.get_battery_status_display }}</dd></div>
-              <div class="rounded-lg bg-sky-50 px-3 py-2"><dt class="text-xs text-slate-500">Body / Chassis</dt><dd class="font-bold text-navy">{{ laptop.self_assessment.get_chassis_status_display }}</dd></div>
-              <div class="rounded-lg bg-sky-50 px-3 py-2"><dt class="text-xs text-slate-500">Storage &amp; Performance</dt><dd class="font-bold text-navy">{{ laptop.self_assessment.get_storage_status_display }}</dd></div>
-              <div class="rounded-lg bg-sky-50 px-3 py-2"><dt class="text-xs text-slate-500">Chosen Service Pathway</dt><dd class="font-bold text-navy">{{ laptop.self_assessment.get_chosen_pathway_display }}</dd></div>
-            </dl>
-            {% if laptop.self_assessment.notes %}<div class="mt-3 rounded-lg border border-sky-100 bg-white px-3 py-2"><p class="text-xs font-bold text-slate-500">Owner notes</p><p class="mt-1 text-slate-700">{{ laptop.self_assessment.notes }}</p></div>{% endif %}
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <span class="badge {{ laptop.self_assessment.health_badge_color }}">{{ laptop.self_assessment.condition_label }}</span>
+            <span class="text-xs text-slate-500">{{ laptop.self_assessment.get_chosen_pathway_display }}</span>
           </div>
-        </details>
-        {% else %}
-        <button type="button" disabled class="mt-5 w-full cursor-not-allowed rounded-lg border border-sky-200 bg-sky-100 px-4 py-3 text-sm font-bold text-sky-300">View My Full Report</button>
-        {% endif %}
-      </article>
-
-      {% if laptop.status == 'PENDING_Admin_assesment' or laptop.status == 'IT_ADMIN_ASSESMENT_IN_PROGRESS' %}
-      <article class="bg-rose-50 border border-rose-100 p-5 md:p-6">
-          <p class="text-xs font-bold uppercase tracking-[.14em] text-rose-700">IT Verification</p>
-          <div class="mt-3 rounded-lg border border-rose-200 bg-white/60 px-4 py-5">
-            <p class="text-lg font-extrabold text-rose-800">Pending IT Admin Assessment</p>
-            <p class="mt-1 text-sm text-slate-500">Your device is awaiting technical inspection.</p>
+          <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
+            <div class="rounded-md bg-sky-50 px-3 py-2"><span class="block text-slate-500">Screen</span><b class="text-navy">{{ laptop.self_assessment.get_screen_status_display }}</b></div>
+            <div class="rounded-md bg-sky-50 px-3 py-2"><span class="block text-slate-500">Keyboard</span><b class="text-navy">{{ laptop.self_assessment.get_keyboard_status_display }}</b></div>
+            <div class="rounded-md bg-sky-50 px-3 py-2"><span class="block text-slate-500">Battery</span><b class="text-navy">{{ laptop.self_assessment.get_battery_status_display }}</b></div>
+            <div class="rounded-md bg-sky-50 px-3 py-2"><span class="block text-slate-500">Storage</span><b class="text-navy">{{ laptop.self_assessment.get_storage_status_display }}</b></div>
           </div>
-          <button type="button" disabled class="mt-5 w-full cursor-not-allowed rounded-lg border border-rose-200 bg-rose-100 px-4 py-3 text-sm font-bold text-rose-300">View IT Verified Report</button>
-      </article>
-      {% elif laptop.status == 'IT_Admin_assesment_complete' and laptop.it_assessment %}
-      <article class="bg-amber-50/90 border border-amber-300 p-5 md:p-6">
-          <p class="text-xs font-bold uppercase tracking-[.14em] text-[#80531E]">IT Verified Assessment</p>
-          <p class="mt-2 text-4xl font-extrabold text-navy">{{ laptop.it_assessment.overall_score }} <span class="text-base text-slate-500">/ 100</span></p>
-          <span class="mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-bold {{ laptop.it_assessment.rating_tailwind }}">{{ laptop.it_assessment.rating_label }}</span>
-          <details class="group mt-5">
-            <summary class="cursor-pointer list-none rounded-lg bg-[#80531E] px-4 py-3 text-center text-sm font-bold text-white [&::-webkit-details-marker]:hidden">View IT Verified Report <span class="ml-2 group-open:inline-block group-open:rotate-180">⌄</span></summary>
-            <div class="mt-3 rounded-b-xl border border-[#DFC69A] bg-white/80 p-4">
-              <p class="mb-3 text-xs font-bold uppercase tracking-wide text-[#80531E]">12 technical subsystem scores</p>
-              <dl class="grid gap-2 sm:grid-cols-2">
-                {% for subsystem, score in laptop.it_assessment.module_scores.items %}
-                <div class="flex items-center justify-between rounded-lg bg-[#F7F0E5] px-3 py-2 text-sm"><dt class="pr-3 text-slate-600">{{ subsystem }}</dt><dd class="font-extrabold text-navy">{% if score != None %}{{ score|floatformat:1 }}%{% else %}N/A{% endif %}</dd></div>
-                {% endfor %}
+          <details class="mt-3">
+            <summary class="btn btn-light w-full cursor-pointer">View owner report <span class="ml-auto text-slate-400">+</span></summary>
+            <div class="mt-2 rounded-md border border-sky-100 bg-sky-50/40 p-3 text-xs">
+              <dl class="grid grid-cols-2 gap-2">
+                <div><dt class="text-slate-500">Chassis</dt><dd class="font-bold text-navy">{{ laptop.self_assessment.get_chassis_status_display }}</dd></div>
+                <div><dt class="text-slate-500">Submitted</dt><dd class="font-bold text-navy">{{ laptop.self_assessment.created_at|date:'d M Y' }}</dd></div>
               </dl>
-              {% if laptop.it_assessment.notes %}<div class="mt-3 rounded-lg border border-[#DFC69A] bg-white px-3 py-2 text-sm"><p class="text-xs font-bold text-slate-500">IT notes</p><p class="mt-1 text-slate-700">{{ laptop.it_assessment.notes }}</p></div>{% endif %}
+              {% if laptop.self_assessment.notes %}<p class="mt-3 border-t border-sky-100 pt-2 text-slate-600"><b>Notes:</b> {{ laptop.self_assessment.notes }}</p>{% endif %}
             </div>
           </details>
-          <p class="mt-2 text-xs text-amber-800">Completed {{ laptop.it_assessment.completed_at|date:'d M Y, H:i' }}</p>
+        {% else %}
+          <div class="mt-5 rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            Self-assessment not submitted
+          </div>
+        {% endif %}
       </article>
-      {% endif %}
+
+      <article class="{% if laptop.assessment_stage == 'POST_REPAIR' %}bg-violet-50/60{% else %}bg-amber-50/40{% endif %} p-4 md:p-5">
+        {% if laptop.assessment_stage == 'POST_REPAIR' %}
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-[.14em] text-violet-700">IT administrator</p>
+              <p class="mt-1 text-xs text-slate-500">Post-repair assessment</p>
+            </div>
+            <span class="rounded-md bg-white px-2.5 py-1 text-lg font-extrabold text-violet-800 shadow-sm">{{ laptop.final_assessment_score }}<span class="text-xs text-slate-500">/100</span></span>
+          </div>
+          <span class="mt-3 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold {{ laptop.final_assessment_tailwind }}">{{ laptop.final_assessment_label }}</span>
+          {% if laptop.post_assessment %}
+            <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
+              <div class="rounded-md border border-violet-100 bg-white px-3 py-2"><span class="block text-slate-500">Screen</span><b class="text-navy">{{ laptop.post_assessment.get_screen_status_display }}</b></div>
+              <div class="rounded-md border border-violet-100 bg-white px-3 py-2"><span class="block text-slate-500">Keyboard</span><b class="text-navy">{{ laptop.post_assessment.get_keyboard_status_display }}</b></div>
+              <div class="rounded-md border border-violet-100 bg-white px-3 py-2"><span class="block text-slate-500">Battery</span><b class="text-navy">{{ laptop.post_assessment.get_battery_status_display }}</b></div>
+              <div class="rounded-md border border-violet-100 bg-white px-3 py-2"><span class="block text-slate-500">Storage</span><b class="text-navy">{{ laptop.post_assessment.get_storage_status_display }}</b></div>
+            </div>
+            <details class="mt-3">
+              <summary class="btn w-full cursor-pointer bg-violet-700 text-white">View post-repair report <span class="ml-auto">+</span></summary>
+              <div class="mt-2 rounded-md border border-violet-100 bg-white p-3 text-xs">
+                <dl class="grid grid-cols-2 gap-2">
+                  <div><dt class="text-slate-500">Chassis</dt><dd class="font-bold text-navy">{{ laptop.post_assessment.get_chassis_status_display }}</dd></div>
+                  <div><dt class="text-slate-500">Recorded</dt><dd class="font-bold text-navy">{{ laptop.post_assessment.created_at|date:'d M Y, H:i' }}</dd></div>
+                </dl>
+                {% if laptop.post_assessment.notes %}<p class="mt-3 border-t border-violet-100 pt-2 text-slate-600"><b>Notes:</b> {{ laptop.post_assessment.notes }}</p>{% endif %}
+              </div>
+            </details>
+            {% if laptop.it_assessment %}
+            <details class="mt-2">
+              <summary class="btn w-full cursor-pointer border border-violet-200 bg-white text-violet-800">View final subsystem scores <span class="ml-auto">+</span></summary>
+              <div class="mt-2 max-h-64 overflow-y-auto rounded-md border border-violet-100 bg-white p-3">
+                <dl class="space-y-1.5 text-xs">
+                  {% for subsystem, score in laptop.final_module_scores.items %}
+                  <div class="flex justify-between gap-3 rounded bg-violet-50/70 px-2.5 py-2"><dt class="text-slate-600">{{ subsystem }}</dt><dd class="font-extrabold text-navy">{% if score != None %}{{ score|floatformat:1 }}%{% else %}N/A{% endif %}</dd></div>
+                  {% endfor %}
+                </dl>
+              </div>
+            </details>
+            {% endif %}
+          {% else %}
+            <details class="mt-3">
+              <summary class="btn w-full cursor-pointer bg-violet-700 text-white">View final technical assessment <span class="ml-auto">+</span></summary>
+              <div class="mt-2 max-h-64 overflow-y-auto rounded-md border border-violet-100 bg-white p-3">
+                <dl class="space-y-1.5 text-xs">
+                  {% for subsystem, score in laptop.final_module_scores.items %}
+                  <div class="flex justify-between gap-3 rounded bg-violet-50/70 px-2.5 py-2"><dt class="text-slate-600">{{ subsystem }}</dt><dd class="font-extrabold text-navy">{% if score != None %}{{ score|floatformat:1 }}%{% else %}N/A{% endif %}</dd></div>
+                  {% endfor %}
+                </dl>
+              </div>
+            </details>
+          {% endif %}
+
+          {% if laptop.assessment_repairable_parts or laptop.assessment_non_repairable_parts %}
+            <div class="mt-3 grid gap-2 sm:grid-cols-2">
+              {% if laptop.assessment_repairable_parts %}<div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs"><b class="text-emerald-700">Restored</b><p class="mt-1 text-slate-700">{{ laptop.assessment_repairable_parts|join:", " }}</p></div>{% endif %}
+              {% if laptop.assessment_non_repairable_parts %}<div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs"><b class="text-red-700">Not restored</b><p class="mt-1 text-slate-700">{{ laptop.assessment_non_repairable_parts|join:", " }}</p></div>{% endif %}
+            </div>
+          {% endif %}
+        {% elif laptop.it_assessment %}
+          <div class="flex items-start justify-between gap-3">
+            <div><p class="text-[10px] font-bold uppercase tracking-[.14em] text-amber-700">IT administrator</p><p class="mt-1 text-xs text-slate-500">Initial verified assessment</p></div>
+            <span class="rounded-md bg-white px-2.5 py-1 text-lg font-extrabold text-navy shadow-sm">{{ laptop.it_assessment.overall_score }}<span class="text-xs text-slate-500">/100</span></span>
+          </div>
+          <span class="mt-3 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold {{ laptop.it_assessment.rating_tailwind }}">{{ laptop.it_assessment.rating_label }}</span>
+          <details class="mt-3">
+            <summary class="btn w-full cursor-pointer bg-[#80531E] text-white">View IT report <span class="ml-auto">+</span></summary>
+            <div class="mt-2 max-h-64 overflow-y-auto rounded-md border border-amber-200 bg-white p-3">
+              <dl class="space-y-1.5 text-xs">
+                {% for subsystem, score in laptop.it_assessment.module_scores.items %}
+                <div class="flex justify-between gap-3 rounded bg-amber-50/70 px-2.5 py-2"><dt class="text-slate-600">{{ subsystem }}</dt><dd class="font-extrabold text-navy">{% if score != None %}{{ score|floatformat:1 }}%{% else %}N/A{% endif %}</dd></div>
+                {% endfor %}
+              </dl>
+              {% if laptop.it_assessment.notes %}<p class="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-600"><b>IT notes:</b> {{ laptop.it_assessment.notes }}</p>{% endif %}
+            </div>
+          </details>
+        {% else %}
+          <p class="text-[10px] font-bold uppercase tracking-[.14em] text-rose-700">IT administrator</p>
+          <div class="mt-3 rounded-md border border-rose-100 bg-white px-4 py-4">
+            <p class="text-sm font-extrabold text-rose-800">Assessment pending</p>
+            <p class="mt-1 text-xs text-slate-500">Waiting for the IT administrator.</p>
+          </div>
+          <button disabled class="btn mt-3 w-full cursor-not-allowed bg-rose-100 text-rose-300">View IT report</button>
+        {% endif %}
+      </article>
+
+      <aside class="bg-slate-50 p-4 md:p-5">
+        <p class="text-[10px] font-bold uppercase tracking-[.14em] text-slate-500">Valuation</p>
+        <dl class="mt-3 space-y-2">
+          <div class="rounded-md border border-slate-200 bg-white px-3 py-2"><dt class="text-[10px] uppercase text-slate-500">Acquired</dt><dd class="mt-0.5 text-sm font-extrabold text-navy">{{ laptop.assessment_valuation.acquired_value|kes_format }}</dd></div>
+          <div class="rounded-md border border-slate-200 bg-white px-3 py-2"><dt class="text-[10px] uppercase text-slate-500">Current</dt><dd class="mt-0.5 text-sm font-extrabold text-navy">{{ laptop.assessment_valuation.current_value|kes_format }}</dd></div>
+          <div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2"><dt class="text-[10px] uppercase text-emerald-700">Cashback offer</dt><dd class="mt-0.5 text-sm font-extrabold text-emerald-700">{{ laptop.assessment_valuation.cashback_amount|kes_format }}</dd></div>
+        </dl>
+        <details class="mt-3">
+          <summary class="btn btn-light w-full cursor-pointer">Device details <span class="ml-auto">+</span></summary>
+          <div class="mt-2 rounded-md border border-slate-200 bg-white p-3 text-xs text-slate-600">
+            <p><b>Serial:</b> {{ laptop.serial_number }}</p>
+            <p class="mt-1"><b>Acquired:</b> {% if laptop.purchase_date %}{{ laptop.purchase_date|date:'d M Y' }}{% elif laptop.acquisition_period %}{{ laptop.acquisition_period }}{% else %}Not recorded{% endif %}</p>
+          </div>
+        </details>
+      </aside>
     </div>
+
+    {% if laptop.it_assessment %}
+      {% if laptop.status == 'IT_Admin_assesment_complete' and not laptop.donation_ledger %}
+      <div class="border-t border-amber-200 bg-amber-50 px-4 py-3">
+        <form method="post" class="flex flex-wrap items-center justify-between gap-3">{% csrf_token %}
+          <input type="hidden" name="action" value="accept_cashback_offer">
+          <input type="hidden" name="device" value="{{ laptop.pk }}">
+          <label class="flex max-w-xl items-start gap-2 text-xs text-amber-900"><input type="checkbox" name="donation_terms" value="accepted" required class="mt-0.5"><span>I accept the offer and confirm I am willingly donating this device.</span></label>
+          <button class="btn bg-gold text-white" type="submit">Accept and donate</button>
+        </form>
+      </div>
+      {% elif laptop.donation_ledger %}
+      <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3 text-xs">
+        <b class="text-navy">Donation status</b>
+        {% if laptop.donation_ledger.payout_status == 'REJECTED' %}<span class="badge bg-red-100 text-danger">Disbursement rejected</span>{% elif laptop.donation_ledger.payout_status == 'APPROVED' %}<span class="badge bg-blue-100 text-blue-700">Disbursement approved</span>{% elif laptop.donation_ledger.payout_status == 'PAID' %}<span class="badge bg-green-100 text-forest">Cashback paid</span>{% else %}<span class="badge bg-amber-100 text-amber">Pending approval</span>{% endif %}
+      </div>
+      {% endif %}
+    {% endif %}
   </section>
   {% empty %}
   <section class="panel p-12 text-center">
     <p class="text-lg font-extrabold text-navy">No assessment records yet</p>
-    <p class="mt-2 text-sm text-slate-500">Complete a self-assessment from the Self-assessment tab to see it here.</p>
-    <a href="{% url 'self_assessment' %}" class="btn btn-primary mt-5">Start Self-assessment</a>
+    <p class="mt-2 text-sm text-slate-500">Complete a self-assessment to see it here.</p>
+    <a href="{% url 'self_assessment' %}" class="btn btn-primary mt-5">Start self-assessment</a>
   </section>
   {% endfor %}
 </div>

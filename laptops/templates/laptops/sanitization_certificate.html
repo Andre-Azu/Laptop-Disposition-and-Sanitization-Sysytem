@@ -17,6 +17,13 @@
     {% endif %}
   </div>
   {% if certificate.technician_notes %}<p class="mt-5 text-sm"><b>Technician notes:</b> {{ certificate.technician_notes }}</p>{% endif %}
-  <div class="mt-6 flex justify-end print:hidden"><button type="button" onclick="window.print()" class="btn btn-primary">Print Certificate PDF</button></div>
+  <div class="mt-6 flex flex-wrap justify-end gap-3 print:hidden">
+    <button type="button" onclick="window.print()" class="btn btn-primary">Print Certificate PDF</button>
+    {% if request.user.is_it_admin %}
+    <a href="{% url 'sanitization' %}" class="btn btn-light">Exit</a>
+    {% else %}
+    <a href="{% url 'my_devices' %}" class="btn btn-light">Exit</a>
+    {% endif %}
+  </div>
 </article>
 {% endblock %}

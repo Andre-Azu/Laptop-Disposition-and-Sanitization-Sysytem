@@ -21,7 +21,24 @@
     <p class="text-[11px] font-bold uppercase text-slate-500">Pending IT admin approvals</p>
     <p class="mt-2 text-3xl font-extrabold">{{ pending_admins|length }}</p>
   </a>
-</div><section id="pending-it-admins" class="panel mb-6 overflow-hidden"><div class="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 class="font-bold">Pending IT admin approvals</h2><p class="text-xs text-slate-500">Approve or reject requests from new IT staff.</p></div><span class="badge bg-amber-100 text-amber">{{ pending_admins|length }} pending</span></div><div class="divide-y divide-slate-100">{% for applicant in pending_admins %}<div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4"><div><p class="font-bold">{{ applicant.get_full_name|default:applicant.username }}</p><p class="text-xs text-slate-500">{{ applicant.email }} · Requested {{ applicant.date_joined|date:'d M Y' }}</p></div><div class="flex gap-2"><form method="post" action="{% url 'admin_access_decision' applicant.pk 'approve' %}">{% csrf_token %}<button class="btn bg-forest text-white">Approve</button></form><form method="post" action="{% url 'admin_access_decision' applicant.pk 'reject' %}">{% csrf_token %}<button class="btn btn-light">Reject</button></form></div></div>{% empty %}<p class="px-5 py-7 text-sm text-slate-500">No pending requests.</p>{% endfor %}</div></section><div class="grid gap-6 xl:grid-cols-[.8fr_1.2fr]"><section class="panel p-5"><h2 class="font-bold">Contact details</h2><form method="post" class="mt-4 space-y-3">{% csrf_token %}<input type="hidden" name="action" value="profile">{% for field in form %}<label class="block text-xs font-bold">{{ field.label }}{{ field }}</label>{% endfor %}<button class="btn btn-primary">Save profile</button></form></section><section class="panel overflow-hidden"><div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Processed laptops</h2><p id="processed-filter-label" class="mt-1 text-xs font-bold uppercase text-slate-500">{{ profile_filter }}</p></div><div class="divide-y divide-slate-100">
+</div><section id="pending-it-admins" class="panel mb-6 overflow-hidden"><div class="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 class="font-bold">Pending IT admin approvals</h2><p class="text-xs text-slate-500">Approve or reject requests from new IT staff.</p></div><span class="badge bg-amber-100 text-amber">{{ pending_admins|length }} pending</span></div><div class="divide-y divide-slate-100">{% for applicant in pending_admins %}<div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4"><div><p class="font-bold">{{ applicant.get_full_name|default:applicant.username }}</p><p class="text-xs text-slate-500">{{ applicant.email }} · Requested {{ applicant.date_joined|date:'d M Y' }}</p></div><div class="flex gap-2"><form method="post" action="{% url 'admin_access_decision' applicant.pk 'approve' %}">{% csrf_token %}<button class="btn bg-forest text-white">Approve</button></form><form method="post" action="{% url 'admin_access_decision' applicant.pk 'reject' %}">{% csrf_token %}<button class="btn btn-light">Reject</button></form></div></div>{% empty %}<p class="px-5 py-7 text-sm text-slate-500">No pending requests.</p>{% endfor %}</div></section>
+<section id="my-devices" class="panel mb-6 overflow-hidden">
+  <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+    <div><h2 class="font-bold">My devices</h2><p class="text-xs text-slate-500">Devices added by this IT administrator.</p></div>
+    <a href="{% url 'register_device' %}" class="btn btn-primary">＋ Add device</a>
+  </div>
+  <div class="divide-y divide-slate-100">
+    {% for device in my_devices %}
+    <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <div><p class="font-bold">{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</p><p class="mt-1 text-xs text-slate-500">{{ device.serial_number }} · Added {{ device.created_at|date:'d M Y' }}</p></div>
+      <div class="flex items-center gap-2"><span class="badge bg-slate-100 text-slate-600">{{ device.get_status_display }}</span><a href="{% url 'device_detail' device.pk %}" class="btn btn-light py-1.5 text-xs">More info</a></div>
+    </div>
+    {% empty %}
+    <p class="px-5 py-7 text-sm text-slate-500">No devices added by you yet.</p>
+    {% endfor %}
+  </div>
+</section>
+<div class="grid gap-6 xl:grid-cols-[.8fr_1.2fr]"><section class="panel p-5"><h2 class="font-bold">Contact details</h2><form method="post" class="mt-4 space-y-3">{% csrf_token %}<input type="hidden" name="action" value="profile">{% for field in form %}<label class="block text-xs font-bold">{{ field.label }}{{ field }}</label>{% endfor %}<button class="btn btn-primary">Save profile</button></form></section><section class="panel overflow-hidden"><div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Processed laptops</h2><p id="processed-filter-label" class="mt-1 text-xs font-bold uppercase text-slate-500">{{ profile_filter }}</p></div><div class="divide-y divide-slate-100">
 <div data-processed-list="ASSESSMENTS"{% if profile_filter != "ASSESSMENTS" %} hidden{% endif %}>{% for device in assessment_devices %}<div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm"><div><strong>{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</strong><span class="ml-2 text-slate-500">{{ device.get_status_display }}</span></div><a href="{% url 'device_detail' device.pk %}" class="btn btn-light py-1.5 text-xs">More info</a></div>{% empty %}<p class="p-5 text-sm text-slate-500">No completed assessments.</p>{% endfor %}</div>
 <div data-processed-list="SANITIZATIONS"{% if profile_filter != "SANITIZATIONS" %} hidden{% endif %}>{% for device in sanitization_devices %}<div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm"><div><strong>{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</strong><span class="ml-2 text-slate-500">{{ device.get_status_display }}</span></div><a href="{% url 'device_detail' device.pk %}" class="btn btn-light py-1.5 text-xs">More info</a></div>{% empty %}<p class="p-5 text-sm text-slate-500">No completed sanitizations.</p>{% endfor %}</div>
 <div data-processed-list="REPAIRS"{% if profile_filter != "REPAIRS" %} hidden{% endif %}>{% for device in repair_devices %}<div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm"><div><strong>{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</strong><span class="ml-2 text-slate-500">{{ device.get_status_display }}</span></div><a href="{% url 'device_detail' device.pk %}" class="btn btn-light py-1.5 text-xs">More info</a></div>{% empty %}<p class="p-5 text-sm text-slate-500">No finalized repairs.</p>{% endfor %}</div>
@@ -39,5 +56,42 @@ function setFilter(filter) {
   if (label) label.textContent = filter;
 }
 </script>
-{% else %}<div class="grid gap-6 xl:grid-cols-[.8fr_1.2fr]"><section class="panel p-5"><h2 class="font-bold">Contact details</h2><form method="post" class="mt-4 space-y-3">{% csrf_token %}<input type="hidden" name="action" value="profile">{% for field in form %}<label class="block text-xs font-bold">{{ field.label }}{{ field }}{% if field.errors %}<span class="mt-1 block text-danger">{{ field.errors|join:', ' }}</span>{% endif %}</label>{% endfor %}<button class="btn btn-primary">Save profile</button></form></section><section class="space-y-6"><div class="panel overflow-hidden"><div class="flex items-center justify-between border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Registered devices</h2><a href="{% url 'register_device' %}" class="text-xs font-bold text-brand">Register +</a></div><div class="divide-y divide-slate-100">{% for device in devices %}<div class="flex justify-between gap-3 px-5 py-3"><div><p class="text-sm font-bold">{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</p><p class="text-xs text-slate-500">{{ device.get_status_display }}</p></div><span class="text-xs text-slate-500">{{ device.created_at|date:'d M Y' }}</span></div>{% empty %}<p class="p-5 text-sm text-slate-500">No devices registered.</p>{% endfor %}</div></div><div class="panel overflow-hidden"><div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Donation rewards ledger</h2></div><div class="divide-y divide-slate-100">{% for entry in donations %}<div class="flex items-center justify-between gap-3 px-5 py-3 text-sm"><div><p class="font-bold">{{ entry.device.device_name }}</p><p class="text-xs text-slate-500">{{ entry.donated_at|date:'d M Y' }}</p></div><div class="text-right"><p class="font-bold">{{ entry.cashback_kes|kes_format }}</p><span class="badge bg-amber-100 text-amber">{{ entry.payout_status }}</span></div></div>{% empty %}<p class="p-5 text-sm text-slate-500">No reward entries yet.</p>{% endfor %}</div></div></section></div>{% endif %}
+{% else %}
+<div class="mb-7 grid gap-3 sm:grid-cols-3">
+  <div class="panel border-t-2 border-t-brand p-5"><p class="text-[11px] font-bold uppercase text-slate-500">Registered devices</p><p class="mt-2 text-3xl font-extrabold">{{ devices|length }}</p></div>
+  <div class="panel border-t-2 border-t-gold p-5"><p class="text-[11px] font-bold uppercase text-slate-500">Public listings</p><p class="mt-2 text-3xl font-extrabold">{{ listed_count }}</p></div>
+  <div class="panel border-t-2 border-t-forest p-5"><p class="text-[11px] font-bold uppercase text-slate-500">Donation submissions</p><p class="mt-2 text-3xl font-extrabold">{{ donations|length }}</p></div>
+</div>
+<div class="grid gap-6 xl:grid-cols-[.8fr_1.2fr]">
+  <section class="panel p-5">
+    <h2 class="font-bold">Contact details</h2>
+    <form method="post" class="mt-4 space-y-3">{% csrf_token %}<input type="hidden" name="action" value="profile">{% for field in form %}<label class="block text-xs font-bold">{{ field.label }}{{ field }}{% if field.errors %}<span class="mt-1 block text-danger">{{ field.errors|join:', ' }}</span>{% endif %}</label>{% endfor %}<button class="btn btn-primary">Save profile</button></form>
+  </section>
+  <section class="space-y-6">
+    <div class="panel overflow-hidden">
+      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 class="font-bold">My registered devices</h2><p class="mt-1 text-xs text-slate-500">Current processing and disposition status</p></div><a href="{% url 'register_device' %}" class="text-xs font-bold text-brand">Register +</a></div>
+      <div class="divide-y divide-slate-100">
+        {% for device in devices %}
+        <div class="flex items-center justify-between gap-3 px-5 py-4">
+          <div><p class="text-sm font-bold">{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</p><p class="mt-1 text-xs text-slate-500">{{ device.serial_number }} · Added {{ device.created_at|date:'d M Y' }}</p></div>
+          <div class="text-right"><span class="badge bg-slate-100 text-slate-600">{{ device.get_status_display }}</span>{% if device.is_listed %}<p class="mt-2 text-[10px] font-bold uppercase text-forest">Listed publicly</p>{% endif %}</div>
+        </div>
+        {% empty %}<p class="p-5 text-sm text-slate-500">No devices registered.</p>{% endfor %}
+      </div>
+    </div>
+    <div class="panel overflow-hidden">
+      <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Listed devices</h2><p class="mt-1 text-xs text-slate-500">Devices currently visible on the dashboard timeline</p></div>
+      <div class="divide-y divide-slate-100">
+        {% for device in devices %}{% if device.is_listed %}
+        <div class="flex items-center justify-between gap-3 px-5 py-4"><div><p class="text-sm font-bold">{{ device.device_name }}</p><p class="text-xs text-slate-500">{{ device.make }} {{ device.model_name }}</p></div><a href="{% url 'device_detail' device.pk %}" class="btn btn-light text-xs">View details</a></div>
+        {% endif %}{% empty %}<p class="p-5 text-sm text-slate-500">No listed devices yet.</p>{% endfor %}
+      </div>
+    </div>
+    <div class="panel overflow-hidden">
+      <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Donation rewards ledger</h2></div>
+      <div class="divide-y divide-slate-100">{% for entry in donations %}<div class="flex items-center justify-between gap-3 px-5 py-3 text-sm"><div><p class="font-bold">{{ entry.device.device_name }}</p><p class="text-xs text-slate-500">{{ entry.donated_at|date:'d M Y' }}</p></div><div class="text-right"><p class="font-bold">{{ entry.cashback_kes|kes_format }}</p><span class="badge bg-amber-100 text-amber">{{ entry.payout_status }}</span></div></div>{% empty %}<p class="p-5 text-sm text-slate-500">No reward entries yet.</p>{% endfor %}</div>
+    </div>
+  </section>
+</div>
+{% endif %}
 {% endblock %}

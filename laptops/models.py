@@ -37,6 +37,8 @@ class Device(models.Model):
         SANITIZATION_PROCESSING = "Sanitization_Processing", "Sanitization Processing"
         REPAIR_PROCESSING = "Repair_Processing", "Repair Processing"
         REPAIR_AND_SANITIZATION_PENDING = "REPAIR_AND_SANITIZATION_PENDING", "Repair and Sanitization Pending"
+        DISPOSITION_PENDING = "DISPOSITION_PENDING", "Disposition Pending"
+        DISBURSEMENT_DENIED = "DISBURSEMENT_DENIED", "Disbursement Denied"
         SCHEDULED_FOR_COLLECTION = "SCHEDULED_FOR_COLLECTION", "Scheduled for Collection"
         COLLECTED = "COLLECTED", "Collected"
         DONATED = "DONATED", "Donated"
@@ -49,6 +51,8 @@ class Device(models.Model):
         ('Sanitization_Processing', 'Sanitization Processing'),
         ('Repair_Processing', 'Repair Processing'),
         ('REPAIR_AND_SANITIZATION_PENDING', 'Repair and Sanitization Pending'),
+        ('DISPOSITION_PENDING', 'Disposition Pending'),
+        ('DISBURSEMENT_DENIED', 'Disbursement Denied'),
         ('SCHEDULED_FOR_COLLECTION', 'Scheduled for Collection'),
         ('COLLECTED', 'Collected'),
         ('SANITIZATION_FAILED', 'Sanitization Failed'),
@@ -109,6 +113,7 @@ class Device(models.Model):
     sanitization_tag = models.CharField(max_length=20, blank=True, default="")
     failure_notes = models.TextField(blank=True, null=True)
     disbursement_approved = models.BooleanField(default=False)
+    is_listed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -300,7 +305,7 @@ class OwnerSelfAssessment(models.Model):
 class ITAssessmentScoringEngine:
     OPTIONS = (
         ("GOOD", "Working / Good"),
-        ("SOMEWHAT", "Somewhat Working"),
+        ("SOMEWHAT", "Needs Attention"),
         ("POOR", "Poor / Spoilt"),
         ("NOT_AVAILABLE", "Not Available"),
     )
@@ -311,20 +316,30 @@ class ITAssessmentScoringEngine:
         "NOT_AVAILABLE": None,
     }
     MODULES = {
-        "Motherboard": (15.0, {"q1_1": "Is the motherboard functioning properly?", "q1_2": "Are the motherboard's ports and connectors working?", "q1_3": "Is the motherboard free from physical or liquid damage?", "q1_4": "Does the motherboard operate without unexpected interruptions?"}),
-        "CPU / Processor": (10.0, {"q2_1": "Is the processor functioning properly?", "q2_2": "Does the processor pass diagnostic tests?", "q2_3": "Does the processor operate within acceptable temperature limits?", "q2_4": "Does the processor execute tasks without unexpected errors?"}),
-        "RAM / Memory": (10.0, {"q3_1": "Is the installed RAM functioning properly?", "q3_2": "Does the RAM pass memory diagnostic tests?", "q3_3": "Are all RAM slots functioning properly?", "q3_4": "Are the RAM modules free from physical damage?"}),
-        "Storage HDD / SSD": (12.0, {"q4_1": "Is the storage drive functioning properly?", "q4_2": "Is the storage drive in good health?", "q4_3": "Can the storage drive read and write data correctly?", "q4_4": "Is the storage drive free from critical errors?", "q4_5": "Does the storage drive operate without unusual noises (HDD only)?"}),
-        "Power System": (10.0, {"q5_1": "Is the battery functioning properly?", "q5_2": "Does the battery hold charge adequately?", "q5_3": "Does the battery charge correctly?", "q5_4": "Is the power adapter functioning properly?", "q5_5": "Is the battery free from physical damage or swelling?"}),
-        "Cooling System": (8.0, {"q6_1": "Is the cooling fan functioning properly?", "q6_2": "Does the cooling fan operate without unusual noises?", "q6_3": "Is the cooling system free from dust and blockages?", "q6_4": "Does the cooling system regulate temperatures properly?", "q6_5": "Is the heat sink functioning and physically intact?"}),
-        "GPU / Graphics Unit": (8.0, {"q7_1": "Is the GPU functioning properly?", "q7_2": "Does the GPU pass diagnostic tests?", "q7_3": "Does the GPU process and display graphics correctly?", "q7_4": "Does the GPU operate within acceptable temperature limits?", "q7_5": "Is the GPU free from driver-related errors?"}),
-        "Display / Screen": (8.0, {"q8_1": "Is the display producing a clear image?", "q8_2": "Is the screen backlight functioning properly?", "q8_3": "Is the display free from dead pixels, lines and visual distortions?", "q8_4": "Is the screen free from physical damage?", "q8_5": "Does the display function properly when tested with an external monitor?"}),
-        "Keyboard": (5.0, {"q9_1": "Are all keyboard keys functioning properly?", "q9_2": "Are all keyboard keys physically intact?", "q9_3": "Does the keyboard respond consistently to input?", "q9_4": "Is the keyboard backlight functioning properly?"}),
-        "Touchpad": (5.0, {"q10_1": "Is the touchpad detecting finger movements correctly?", "q10_2": "Are the left and right-click functions working?", "q10_3": "Are the touchpad's multi-touch functions working?", "q10_4": "Is the touchpad physically intact?"}),
-        "Network Adapter": (5.0, {"q11_1": "Is the Wi-Fi adapter functioning properly?", "q11_2": "Can the laptop connect to Wi-Fi networks successfully?", "q11_3": "Does the Wi-Fi connection remain stable?", "q11_4": "Is the Ethernet port functioning properly?", "q11_5": "Are the network drivers functioning correctly?"}),
-        "Audio System": (4.0, {"q12_1": "Are the internal speakers functioning properly?", "q12_2": "Are both speakers producing clear sound?", "q12_3": "Is the microphone functioning properly?", "q12_4": "Is the headphone jack functioning properly?", "q12_5": "Are the audio drivers functioning correctly?"}),
+        "Motherboard": (15.0, {"q1_1": "Is the motherboard functioning properly?", "q1_2": "Are the motherboard's ports, connectors, and operation free from faults?"}),
+        "CPU / Processor": (10.0, {"q2_1": "Is the processor functioning properly and passing diagnostics?", "q2_2": "Does the processor operate at acceptable temperatures without unexpected errors?"}),
+        "RAM / Memory": (10.0, {"q3_1": "Is the installed RAM functioning and passing memory diagnostics?", "q3_2": "Are all RAM slots and modules free from faults or physical damage?"}),
+        "Storage HDD / SSD": (12.0, {"q4_1": "Is the storage drive functioning with good drive health?", "q4_2": "Can the drive read/write data correctly without critical errors or unusual noises?"}),
+        "Power System": (10.0, {"q5_1": "Is the battery functioning, charging, and holding charge correctly?", "q5_4": "Is the power adapter working and the battery free from damage or swelling?"}),
+        "Cooling System": (8.0, {"q6_1": "Is the cooling fan functioning without unusual noise or blockage?", "q6_5": "Is the heat sink functioning and is temperature regulation working correctly?"}),
+        "GPU / Graphics Unit": (8.0, {"q7_1": "Is the GPU functioning and passing diagnostics?", "q7_3": "Does the GPU display graphics correctly at normal temperatures without driver errors?"}),
+        "Display / Screen": (8.0, {"q8_1": "Is the display producing a clear image with a working backlight?", "q8_3": "Is the screen free from dead pixels, distortion, and physical damage?"}),
+        "Keyboard": (5.0, {"q9_1": "Are all keyboard keys functional, intact, and consistent, including backlight if fitted?"}),
+        "Touchpad": (5.0, {"q10_1": "Is the touchpad movement, buttons, multi-touch, and physical condition working correctly?"}),
+        "Network Adapter": (5.0, {"q11_1": "Are Wi-Fi, Ethernet, and network drivers functioning correctly and stably?"}),
+        "Audio System": (4.0, {"q12_1": "Are speakers, microphone, headphone jack, and audio drivers functioning correctly?"}),
     }
     ALL_FIELDS = tuple(field for _weight, questions in MODULES.values() for field in questions)
+    QUESTION_COUNT = len(ALL_FIELDS)
+    LEGACY_FIELD_COUNTS = {
+        1: 4, 2: 4, 3: 4, 4: 5, 5: 5, 6: 5,
+        7: 5, 8: 5, 9: 4, 10: 4, 11: 5, 12: 5,
+    }
+    LEGACY_FIELDS = tuple(
+        f"q{module_number}_{question_number}"
+        for module_number, question_count in LEGACY_FIELD_COUNTS.items()
+        for question_number in range(1, question_count + 1)
+    )
 
     @classmethod
     def multiplier_for(cls, answer):
@@ -349,7 +364,7 @@ class ITAssessment(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
-    for _field_name in ITAssessmentScoringEngine.ALL_FIELDS:
+    for _field_name in ITAssessmentScoringEngine.LEGACY_FIELDS:
         locals()[_field_name] = models.CharField(max_length=20, choices=ITAssessmentScoringEngine.OPTIONS, blank=True, default="")
 
 ITAssessment.questions = ITAssessmentScoringEngine.MODULES
@@ -426,6 +441,14 @@ class RepairEvaluation(models.Model):
     repair_result = models.CharField(max_length=20, choices=REPAIR_RESULT_CHOICES)
     comments = models.TextField(help_text="Mandatory explanation if component is Not Fixed")
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class RepairExecutionDraft(models.Model):
+    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="repair_execution_draft")
+    answers = models.JSONField(default=dict, blank=True)
+    comments = models.TextField(blank=True, default="")
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class SanitizationJob(models.Model):

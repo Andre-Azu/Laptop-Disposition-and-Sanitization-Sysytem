@@ -36,8 +36,8 @@
       <section>
         <h3 class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">IT Diagnostic Flags</h3>
         <div class="flex flex-wrap gap-2">
-          {% for component, status, status_code in device.it_diagnostic_flags %}
-          <span class="badge bg-amber-100 text-amber-700">{{ component }} · {{ status }}</span>
+          {% for component, status, status_code, badge_class in device.it_diagnostic_flags %}
+          <span class="badge {{ badge_class }}">{{ component }} · {{ status }}</span>
           {% empty %}
           <span class="text-xs text-slate-400">No IT diagnostic flags recorded</span>
           {% endfor %}
@@ -45,8 +45,21 @@
       </section>
     </div>
     <div class="flex justify-end border-t border-slate-100 px-5 py-4">
-      {% if device.assessment_completed or device.status == 'IT_Admin_assesment_complete' or device.status == 'Sanitization_Processing' or device.status == 'Repair_Processing' or device.status == 'REPAIR_AND_SANITIZATION_PENDING' %}
-      <a href="{% url 'repair_execution' device.pk %}" class="btn btn-primary">Start Repair</a>
+      {% if device.repair_tag == 'complete' and device.sanitization_tag == 'pending' %}
+      <a href="{% url 'sanitization_execution' device.pk %}" class="btn btn-primary">SEND TO SANITIZATION QUEUE</a>
+      {% elif device.assessment_completed or device.status == 'IT_Admin_assesment_complete' or device.status == 'Sanitization_Processing' or device.status == 'Repair_Processing' or device.status == 'REPAIR_AND_SANITIZATION_PENDING' %}
+      <div class="w-full">
+        <div class="mb-3 flex items-center justify-between gap-3 text-xs font-bold text-slate-600">
+          <span>{{ device.repair_progress_label }}</span>
+          <span>{{ device.repair_progress }}%</span>
+        </div>
+        <div class="mb-3 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div class="h-full rounded-full bg-brand" style="width: {{ device.repair_progress }}%"></div>
+        </div>
+        <div class="flex justify-end">
+          <a href="{% url 'repair_execution' device.pk %}" class="btn btn-primary">{{ device.repair_progress_label }}</a>
+        </div>
+      </div>
       {% else %}
       <section class="w-full rounded-xl border border-slate-200 bg-slate-50 p-5 text-center">
         <h3 class="text-lg font-extrabold text-navy">Cannot be repaired before assessment</h3>

@@ -11,6 +11,18 @@
 </div>
 <form method="post" id="repairExecutionForm" class="space-y-4">
   {% csrf_token %}
+  <section class="panel p-5" id="repairProgressSection" data-total="{{ repair_total_count }}" data-completed="{{ repair_completed_count }}">
+    <div class="flex items-center justify-between gap-3 text-sm">
+      <div>
+        <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Repair progress</p>
+        <p id="repairProgressText" class="mt-1 font-bold text-navy">{{ repair_completed_count }} of {{ repair_total_count }} components completed</p>
+      </div>
+      <span id="repairProgressPercent" class="badge bg-blue-100 text-blue-700">{% widthratio repair_completed_count repair_total_count 100 %}%</span>
+    </div>
+    <div class="mt-3 h-3 overflow-hidden rounded-full bg-slate-100">
+      <div id="repairProgressBar" class="h-full rounded-full bg-brand transition-all duration-300" style="width: {% widthratio repair_completed_count repair_total_count 100 %}%"></div>
+    </div>
+  </section>
   {% for component in flagged_components %}
   {% with key=component.name|lower %}
   <article class="repair-component panel transition-all duration-200{% if component.name in missing_components %} border-rose-500 ring-4 ring-rose-500/20{% endif %}" data-component-card>
@@ -57,6 +69,67 @@
 (function () {
   const form = document.getElementById('repairExecutionForm');
   if (!form) return;
+
+  const progressBar = document.getElementById('repairProgressBar');
+  const progressText = document.getElementById('repairProgressText');
+  const progressPercent = document.getElementById('repairProgressPercent');
+  const cards = Array.from(form.querySelectorAll('[data-component-card]'));
+
+  function updateProgress() {
+    const progressSection = document.getElementById('repairProgressSection');
+    const total = Number(progressSection && progressSection.dataset.total || cards.length);
+    const alreadyCompleted = Number(progressSection && progressSection.dataset.completed || 0);
+    const newlyAnswered = cards.filter(function (card) {
+      return card.querySelector('input[type="radio"]:checked');
+    }).length;
+    const answered = Math.min(total, alreadyCompleted + newlyAnswered);
+    const percent = total ? Math.round((answered / total) * 100) : 0;
+    if (progressBar) progressBar.style.width = percent + '%';
+    if (progressText) progressText.textContent = answered + ' of ' + total + ' components completed';
+    if (progressPercent) progressPercent.textContent = percent + '%';
+  }
+
+  function saveDraft() {
+    const data = new FormData(form);
+    data.set('save_draft', 'yes');
+    fetch(window.location.href, {
+      method: 'POST',
+      body: data,
+      headers: { 'X-CSRFToken': data.get('csrfmiddlewaretoken') }
+    }).catch(function () {});
+  }
+
+  cards.forEach(function (card, index) {
+    card.querySelectorAll('input[type="radio"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        card.classList.remove('border-rose-500', 'ring-4', 'ring-rose-500/20');
+        const message = card.querySelector('.missing-message');
+        if (message) message.classList.add('hidden');
+        updateProgress();
+        saveDraft();
+
+        card.classList.add('hidden');
+        const nextCard = cards.slice(index + 1).find(function (item) {
+          return !item.classList.contains('hidden');
+        });
+        if (nextCard) {
+          window.setTimeout(function () {
+            nextCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 180);
+        }
+      });
+    });
+  });
+
+  const notes = document.getElementById('technician_notes');
+  let notesTimer = null;
+  if (notes) {
+    notes.addEventListener('input', function () {
+      window.clearTimeout(notesTimer);
+      notesTimer = window.setTimeout(saveDraft, 500);
+    });
+  }
+  updateProgress();
 
   form.addEventListener('submit', function (event) {
     let firstMissing = null;

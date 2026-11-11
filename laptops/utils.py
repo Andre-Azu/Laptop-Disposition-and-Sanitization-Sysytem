@@ -28,7 +28,7 @@ def _score_component(device, component_name):
             or repair_component in normalized_component
             or repair_component.startswith(normalized_component.split()[0])
         ):
-            return 1.0 if repair.repair_result == "FIXED" else 0.0
+            return 0.6 if repair.repair_result == "FIXED" else 0.0
 
     technical = getattr(device, "technical_assessment", None)
     if technical is not None:
@@ -60,7 +60,7 @@ def _component_score(value):
     normalized = str(value or "").strip().lower().replace("_", " ")
     if normalized in {"fixed", "working", "working / good", "good / working"}:
         return 1.0
-    if normalized in {"somewhat", "somewhat working", "intermittent", "not tested"}:
+    if normalized in {"somewhat", "somewhat working", "needs attention", "intermittent", "not tested"}:
         return 0.5
     if normalized in {"not repairable", "not fixed", "poor", "spoilt", "poor / spoilt", "bad / spoilt", ""}:
         return 0.0

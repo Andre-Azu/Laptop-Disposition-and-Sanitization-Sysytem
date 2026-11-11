@@ -2,7 +2,122 @@
 {% load laptops_extras %}
 {% block title %}Dashboard | Strathmore Laptop Recovery{% endblock %}
 {% block content %}
-<div class="mb-6 flex flex-wrap items-end justify-between gap-4"><div><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Device manager / Home</p><h1 class="mt-2 text-3xl font-extrabold">Good day, {{ user.first_name|default:user.username }}</h1><p class="mt-1 text-sm text-slate-500">Manage your equipment and find systems in the university inventory.</p></div><a href="{% url 'register_device' %}" class="btn btn-primary">＋ Register a device</a></div>
-<div class="mb-7 grid gap-3 sm:grid-cols-3"><div class="panel border-t-2 border-t-brand p-5"><p class="text-[11px] font-bold uppercase text-slate-500">Total assets</p><p class="mt-2 text-3xl font-extrabold">{{ asset_count }}</p><p class="mt-1 text-xs text-slate-500">Devices registered to you</p></div><div class="panel border-t-2 border-t-gold p-5"><p class="text-[11px] font-bold uppercase text-slate-500">E-waste recovered</p><p class="mt-2 text-3xl font-extrabold">{{ recovered_total|kes_format }}</p><p class="mt-1 text-xs text-slate-500">Net device value donated</p></div><div class="panel border-t-2 border-t-forest p-5"><p class="text-[11px] font-bold uppercase text-slate-500">Earned rewards</p><p class="mt-2 text-3xl font-extrabold">{{ reward_total|kes_format }}</p><p class="mt-1 text-xs text-slate-500">Your paid M-Pesa rewards</p></div></div>
-<section class="panel overflow-hidden"><div class="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 px-5 py-4"><div><p class="text-xs font-bold uppercase tracking-wider text-gold">Campus exchange</p><h2 class="mt-1 text-xl font-extrabold">Public University Inventory &amp; Component Marketplace</h2><p class="mt-1 text-xs text-slate-500">University systems available for owner contact.</p></div><span class="text-xs text-slate-500">{{ inventory|length }} listings</span></div><div class="overflow-x-auto"><table class="w-full min-w-[740px] text-left text-sm"><thead class="bg-slate-50 text-[11px] uppercase text-slate-500"><tr><th class="px-5 py-3">System</th><th class="px-5 py-3">Specifications</th><th class="px-5 py-3">Owner</th><th class="px-5 py-3">Contact</th></tr></thead><tbody class="divide-y divide-slate-100">{% for device in inventory %}<tr><td class="px-5 py-4"><p class="font-bold">{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</p></td><td class="px-5 py-4 text-xs text-slate-600">{{ device.processor }}<br>{{ device.ram_gb }} GB RAM · {{ device.storage_info }}</td><td class="px-5 py-4">{{ device.owner.get_full_name|default:device.owner.username }}</td><td class="px-5 py-4"><a class="btn btn-light" href="mailto:{{ device.owner.email }}?subject=University%20laptop%20inventory%20enquiry">✉ Contact owner</a></td></tr>{% empty %}<tr><td colspan="4" class="px-5 py-12 text-center"><p class="font-bold">No inventory listed</p><p class="mt-1 text-sm text-slate-500">Available university systems will appear here.</p></td></tr>{% endfor %}</tbody></table></div></section>
+<div class="mb-7 flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Device exchange</p>
+    <h1 class="mt-2 text-3xl font-extrabold">Available devices</h1>
+    <p class="mt-1 text-sm text-slate-500">Discover university devices, compare assessments, and connect with owners.</p>
+  </div>
+  <a href="{% url 'register_device' %}" class="btn btn-primary">＋ Register a device</a>
+</div>
+
+<div class="mb-7 grid gap-3 sm:grid-cols-3">
+  <div class="panel border-t-2 border-t-brand p-5"><p class="text-[11px] font-bold uppercase text-slate-500">Total assets</p><p class="mt-2 text-3xl font-extrabold">{{ asset_count }}</p><p class="mt-1 text-xs text-slate-500">Registered to you</p></div>
+  <div class="panel border-t-2 border-t-gold p-5"><p class="text-[11px] font-bold uppercase text-slate-500">Public listings</p><p class="mt-2 text-3xl font-extrabold">{{ inventory|length }}</p><p class="mt-1 text-xs text-slate-500">Devices available to explore</p></div>
+  <div class="panel border-t-2 border-t-forest p-5"><p class="text-[11px] font-bold uppercase text-slate-500">Rewards earned</p><p class="mt-2 text-3xl font-extrabold">{{ reward_total|kes_format }}</p><p class="mt-1 text-xs text-slate-500">Paid M-Pesa rewards</p></div>
+</div>
+
+<section>
+  <div class="mb-4 flex items-end justify-between gap-3">
+    <div><p class="text-xs font-bold uppercase tracking-wider text-gold">Campus marketplace</p><h2 class="mt-1 text-xl font-extrabold">Listed devices</h2></div>
+    <span class="text-xs text-slate-500">{{ inventory|length }} active listings</span>
+  </div>
+  <div class="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
+    {% for device in inventory %}
+    <article class="panel overflow-hidden fade-in">
+      <div class="border-b border-slate-100 p-5">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-[11px] font-bold uppercase tracking-wide text-brand">{{ device.make }}</p>
+            <h3 class="mt-1 text-lg font-extrabold">{{ device.device_name }}</h3>
+            <p class="mt-1 text-sm text-slate-600">{{ device.model_name }}</p>
+          </div>
+          <span class="badge {% if device.market_score >= 65 %}bg-emerald-100 text-emerald-700{% elif device.market_score >= 45 %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+            {{ device.market_score|floatformat:0 }}% score
+          </span>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-px bg-slate-100">
+        <div class="bg-white p-4"><p class="text-[10px] font-bold uppercase text-slate-500">Owner</p><p class="mt-1 text-sm font-bold">{{ device.owner.get_full_name|default:device.owner.username }}</p></div>
+        <div class="bg-white p-4"><p class="text-[10px] font-bold uppercase text-slate-500">Current value</p><p class="mt-1 text-sm font-bold text-forest">{{ device.market_valuation.current_value|kes_format }}</p></div>
+      </div>
+      <div class="p-5">
+        <p class="text-[10px] font-bold uppercase text-slate-500">System specifications</p>
+        <div class="mt-2 grid grid-cols-3 gap-2 text-center">
+          <div class="rounded bg-slate-50 px-2 py-2"><p class="text-[10px] text-slate-500">CPU</p><p class="mt-1 text-xs font-bold">{{ device.processor }}</p></div>
+          <div class="rounded bg-slate-50 px-2 py-2"><p class="text-[10px] text-slate-500">Memory</p><p class="mt-1 text-xs font-bold">{{ device.ram_gb }} GB</p></div>
+          <div class="rounded bg-slate-50 px-2 py-2"><p class="text-[10px] text-slate-500">Storage</p><p class="mt-1 text-xs font-bold">{{ device.storage_info }}</p></div>
+        </div>
+        <div class="mt-4 flex gap-2">
+          <button type="button" class="btn btn-light flex-1" data-open-device="device-details-{{ device.pk }}">View details</button>
+          <a class="btn btn-primary flex-1" href="mailto:{{ device.owner.email }}?subject={{ device.device_name|urlencode }}%20device%20enquiry">Contact owner</a>
+        </div>
+      </div>
+    </article>
+
+    <div id="device-details-{{ device.pk }}" data-device-modal class="fixed inset-0 z-50 hidden items-center justify-center bg-navy/60 p-4">
+      <div class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-2xl">
+        <div class="flex items-start justify-between border-b border-slate-200 px-6 py-5">
+          <div><p class="text-xs font-bold uppercase text-brand">Computer assessment</p><h3 class="mt-1 text-xl font-extrabold">{{ device.device_name }}</h3></div>
+          <button type="button" data-close-device class="text-2xl leading-none text-slate-400">&times;</button>
+        </div>
+        <div class="p-6">
+          <div class="grid gap-4 sm:grid-cols-3">
+            <div class="rounded border border-slate-200 p-4"><p class="text-xs text-slate-500">Final assessment</p><p class="mt-1 text-lg font-extrabold">{{ device.market_score|floatformat:0 }}%</p><p class="mt-1 text-xs font-bold text-brand">{{ device.market_rating }}</p></div>
+            <div class="rounded border border-slate-200 p-4"><p class="text-xs text-slate-500">Current valuation</p><p class="mt-1 text-lg font-extrabold">{{ device.market_valuation.current_value|kes_format }}</p></div>
+            <div class="rounded border border-slate-200 p-4"><p class="text-xs text-slate-500">Owner</p><p class="mt-1 font-bold">{{ device.owner.get_full_name|default:device.owner.username }}</p><p class="mt-1 text-xs text-slate-500">{{ device.owner.email|default:"No email supplied" }}</p></div>
+          </div>
+          <div class="mt-5">
+            <h4 class="text-sm font-bold">Assessment breakdown</h4>
+            <div class="mt-3 grid gap-2 sm:grid-cols-2">
+              {% if device.it_assessment %}
+                {% for name, score in device.it_assessment.module_scores.items %}
+                <div class="rounded border border-slate-200 px-3 py-3">
+                  <div class="flex justify-between text-xs"><span class="font-semibold">{{ name }}</span><strong>{{ score|floatformat:0 }}%</strong></div>
+                  <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-brand" style="width: {{ score }}%"></div></div>
+                </div>
+                {% endfor %}
+              {% else %}
+                <p class="text-sm text-slate-500">No detailed assessment is available for this device.</p>
+              {% endif %}
+            </div>
+          </div>
+          <div class="mt-5">
+            <h4 class="text-sm font-bold">Repair history</h4>
+            <div class="mt-2 space-y-2">
+              {% for repair in device.market_repairs %}
+                <div class="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm"><strong>{{ repair.component_name }}</strong> — Repaired</div>
+              {% empty %}
+                <p class="rounded border border-slate-200 px-3 py-2 text-sm text-slate-500">No components were repaired.</p>
+              {% endfor %}
+            </div>
+          </div>
+          <a class="btn btn-primary mt-5 w-full" href="mailto:{{ device.owner.email }}?subject={{ device.device_name|urlencode }}%20device%20enquiry">✉ Contact {{ device.owner.get_full_name|default:device.owner.username }}</a>
+        </div>
+      </div>
+    </div>
+    {% empty %}
+    <div class="panel col-span-full py-16 text-center">
+      <p class="font-extrabold">No public listings yet</p>
+      <p class="mt-1 text-sm text-slate-500">Devices owners choose to list after collection will appear here.</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('[data-open-device]').forEach(function(button) {
+  button.addEventListener('click', function() {
+    document.getElementById(button.dataset.openDevice).classList.replace('hidden', 'flex');
+  });
+});
+document.querySelectorAll('[data-device-modal]').forEach(function(modal) {
+  modal.addEventListener('click', function(event) {
+    if (event.target === modal || event.target.closest('[data-close-device]')) {
+      modal.classList.replace('flex', 'hidden');
+    }
+  });
+});
+</script>
 {% endblock %}

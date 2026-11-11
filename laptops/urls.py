@@ -11,6 +11,7 @@ urlpatterns = [
     path("devices/", views.device_inventory, name="devices"),
     path("devices/register/", views.register_device, name="register_device"),
     path("my-devices/", views.my_devices, name="my_devices"),
+    path("my-devices/<int:device_id>/listing/remove/", views.remove_device_listing, name="remove_device_listing"),
     path("devices/<int:device_id>/detail/", views.device_detail, name="device_detail"),
     path("assessments/", views.assessments, name="assessments"),
     path("assessments/", views.assessments, name="it_assessments_portal"),

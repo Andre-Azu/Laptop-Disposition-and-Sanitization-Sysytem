@@ -8,6 +8,39 @@
 </div>
 
 {% if is_admin %}
+<div class="mb-6 grid gap-3 sm:grid-cols-3" aria-label="Disposition filters">
+  <a href="?disposition_filter=pending" class="panel p-4 transition hover:border-brand {% if disposition_filter == 'pending' %}ring-2 ring-brand{% endif %}">
+    <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Pending Approval</p>
+    <p class="mt-2 text-lg font-extrabold text-navy">Pending approval</p>
+  </a>
+  <a href="?disposition_filter=approved_paid" class="panel p-4 transition hover:border-brand {% if disposition_filter == 'approved_paid' %}ring-2 ring-brand{% endif %}">
+    <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Approved / Paid</p>
+    <p class="mt-2 text-lg font-extrabold text-forest">Approved / Paid</p>
+  </a>
+  <a href="?disposition_filter=denied" class="panel p-4 transition hover:border-brand {% if disposition_filter == 'denied' %}ring-2 ring-brand{% endif %}">
+    <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Disbursement Denied</p>
+    <p class="mt-2 text-lg font-extrabold text-danger">Disbursement denied</p>
+  </a>
+</div>
+<section class="panel mb-6 overflow-hidden" aria-label="Ready disposition queue">
+  <div class="border-b border-slate-200 px-5 py-4">
+    <h2 class="font-bold">Ready for Owner Disposition Decision</h2>
+    <p class="mt-1 text-xs text-slate-500">Repair and/or sanitization work completed; awaiting owner choice.</p>
+  </div>
+  <div class="divide-y divide-slate-100">
+    {% for queued_device in disposition_queue %}
+    <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <div>
+        <p class="font-bold text-navy">{{ queued_device.device_name }}</p>
+        <p class="mt-1 text-xs text-slate-500">{{ queued_device.make }} {{ queued_device.model_name }} · Owner: {{ queued_device.owner.get_full_name|default:queued_device.owner.username }}</p>
+      </div>
+      <span class="badge bg-amber-100 text-amber-700">Awaiting owner decision</span>
+    </div>
+    {% empty %}
+    <p class="p-5 text-sm text-slate-500">No devices are waiting for an owner disposition decision.</p>
+    {% endfor %}
+  </div>
+</section>
 <div class="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,.8fr)]">
   <section aria-label="Disbursement approvals">
     <div class="mb-4 flex items-end justify-between"><div><h2 class="text-xl font-bold">Disbursement approvals</h2><p class="mt-1 text-xs text-slate-500">Review donation details before payout.</p></div><span class="text-xs text-slate-500">{{ donations|length }} submissions</span></div>
@@ -16,7 +49,7 @@
       <article class="panel overflow-hidden">
         <div class="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
           <div><p class="text-xs font-bold uppercase tracking-wide text-brand">{{ entry.device.device_name }}</p><h3 class="mt-1 font-extrabold">{{ entry.device.make }} {{ entry.device.model_name }}</h3><p class="mt-1 text-xs text-slate-500">Serial: {{ entry.device.serial_number|default:"Not recorded" }}</p></div>
-          <button type="button" class="btn btn-light shrink-0" aria-expanded="false" aria-controls="disbursement-info-{{ entry.pk }}" data-disbursement-toggle>View info</button>
+          <button type="button" class="btn btn-light shrink-0" data-open-disposition-modal="disposition-modal-{{ entry.pk }}">View info</button>
         </div>
         <div class="grid grid-cols-3 gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3 text-center">
           <div><p class="text-[10px] font-bold text-slate-500">ACQUIRED</p><p class="mt-1 text-sm font-bold">{{ entry.acquired_value|kes_format }}</p></div>
@@ -25,6 +58,18 @@
         </div>
         <div class="px-4 py-3">
           {% if entry.payout_status == 'REJECTED' %}<span class="badge bg-red-100 text-danger">Disbursement not accepted</span>{% elif entry.payout_status == 'APPROVED' %}<span class="badge bg-blue-100 text-blue-700">Approved</span>{% elif entry.payout_status == 'PAID' %}<span class="badge bg-green-100 text-forest">Paid</span>{% else %}<span class="badge bg-amber-100 text-amber">Pending approval</span>{% endif %}
+          <div class="mt-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+            <span class="text-xs font-bold uppercase text-slate-500">Overall health</span>
+            <span class="text-sm font-extrabold text-navy">{{ entry.overall_health_percent }}% · {{ entry.overall_health_rating }}</span>
+          </div>
+          {% if entry.payout_status == 'REJECTED' or entry.device.status == 'DISBURSEMENT_DENIED' %}
+          {% if entry.rejection_reason %}
+          <div class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-danger">
+            <p class="text-xs font-bold uppercase">Denial reason</p>
+            <p class="mt-1 whitespace-pre-line">{{ entry.rejection_reason }}</p>
+          </div>
+          {% endif %}
+          {% endif %}
         </div>
         <div id="disbursement-info-{{ entry.pk }}" hidden class="border-t border-slate-200 bg-sky-50/60 p-4">
           <dl class="grid gap-3 sm:grid-cols-2">
@@ -46,16 +91,31 @@
           </div>
           {% if entry.rejection_reason %}<div class="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger"><strong>Rejection reason:</strong> {{ entry.rejection_reason }}</div>{% endif %}
           {% if entry.payout_status == 'PENDING' %}
-          <form method="post" class="mt-4 space-y-3">{% csrf_token %}
+          <form method="post" class="mt-4 space-y-3" data-disbursement-form>{% csrf_token %}
             <input type="hidden" name="entry" value="{{ entry.pk }}">
-            <label class="block text-xs font-semibold">Rejection reason (required)<textarea name="rejection_reason" rows="3" required class="field mt-1 w-full resize-y" placeholder="Explain why the cashback disbursement is being rejected. This reason will be visible to the device manager."></textarea></label>
-            <div class="flex flex-wrap gap-2"><button name="action" value="reject_donation" class="btn bg-danger text-white">REJECT DISBURSEMENT</button><button name="action" value="approve_donation" class="btn bg-forest text-white">APPROVE DISBURSEMENT ({{ entry.cashback_payout|kes_format }})</button></div>
+            <input type="hidden" name="action" value="approve_donation" data-disbursement-action>
+            <fieldset>
+              <legend class="text-xs font-semibold">Disbursement decision</legend>
+              <div class="mt-2 grid grid-cols-2 gap-2">
+                <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <input type="radio" name="disbursement_decision" value="approve" checked data-disbursement-decision>
+                  Accept
+                </label>
+                <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <input type="radio" name="disbursement_decision" value="reject" data-disbursement-decision>
+                  Deny
+                </label>
+              </div>
+            </fieldset>
+            <label data-rejection-field hidden class="block text-xs font-semibold">Reason for denial (required)<textarea name="rejection_reason" rows="3" disabled class="field mt-1 w-full resize-y" placeholder="Explain why the cashback disbursement is being denied. This reason will be visible to the device manager."></textarea></label>
+            <div class="flex flex-wrap gap-2"><button type="submit" data-disbursement-submit data-accept-label="ACCEPT DISBURSEMENT ({{ entry.cashback_payout|kes_format }})" class="btn bg-forest text-white">ACCEPT DISBURSEMENT ({{ entry.cashback_payout|kes_format }})</button></div>
           </form>
           {% elif entry.payout_status == 'APPROVED' %}
           <form method="post" class="mt-4">{% csrf_token %}<input type="hidden" name="entry" value="{{ entry.pk }}"><button name="action" value="mark_paid" class="btn btn-primary">Mark paid</button></form>
           {% endif %}
         </div>
       </article>
+      {% include "laptops/post_assessment_modal.html" with entry=entry %}
       {% empty %}<div class="panel p-10 text-center text-sm text-slate-500 md:col-span-2">No donation disbursement submissions.</div>{% endfor %}
     </div>
   </section>
@@ -74,7 +134,39 @@
   <section>
     <div class="grid gap-5 md:grid-cols-2">
       {% for device in devices %}
-      <article class="panel p-5"><h2 class="font-bold">{{ device.device_name }}</h2><p class="mt-1 text-sm text-slate-600">{{ device.make }} {{ device.model_name }}</p>{% if device.days_until_collection != None %}<div class="mt-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">Scheduled in {{ device.days_until_collection }} days</div>{% endif %}<div class="mt-5 grid gap-3"><form method="post" class="rounded border border-slate-200 p-4">{% csrf_token %}<input type="hidden" name="device" value="{{ device.pk }}"><input type="hidden" name="action" value="schedule"><label class="block text-xs font-semibold">Preferred date/time<input name="scheduled_for" type="datetime-local" required class="field mt-1"></label><label class="mt-3 block text-xs font-semibold">Collection location<input name="location" value="Strathmore University" class="field mt-1"></label><button class="btn btn-primary mt-4 w-full">Request collection</button></form><form method="post" class="rounded border border-gold/40 bg-amber-50/60 p-4">{% csrf_token %}<input type="hidden" name="device" value="{{ device.pk }}"><input type="hidden" name="action" value="donate"><h3 class="font-bold">School Parts Bank</h3><p class="mt-2 text-sm text-slate-600">Donate this device and request its calculated cashback.</p><button class="btn mt-3 w-full bg-gold text-white">Donate device</button></form></div></article>
+      <article class="panel p-5">
+        <h2 class="font-bold">{{ device.device_name }}</h2>
+        <p class="mt-1 text-sm text-slate-600">{{ device.make }} {{ device.model_name }}</p>
+        {% if device.status == 'DISPOSITION_PENDING' %}
+        <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p class="text-xs font-bold uppercase text-amber-800">Ready for your disposition decision</p>
+        </div>
+        <div class="mt-5 grid gap-3">
+          <form method="post" class="rounded border border-slate-200 p-4">
+            {% csrf_token %}<input type="hidden" name="device" value="{{ device.pk }}"><input type="hidden" name="action" value="schedule">
+            <h3 class="font-bold">Keep device</h3>
+            <p class="mt-1 text-sm text-slate-600">Schedule a collection date and time to return this device to you.</p>
+            <label class="mt-3 block text-xs font-semibold">Preferred date/time<input name="scheduled_for" type="datetime-local" required class="field mt-1"></label>
+            <label class="mt-3 block text-xs font-semibold">Collection location<input name="location" value="Strathmore University" class="field mt-1"></label>
+            <label class="mt-3 flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
+              <input name="list_on_timeline" value="yes" type="checkbox" class="mt-0.5 h-4 w-4">
+              <span><strong>List this device publicly</strong><span class="mt-1 block text-xs text-slate-500">Show the device in the dashboard overview for other device owners.</span></span>
+            </label>
+            <button class="btn btn-primary mt-4 w-full">Keep and schedule collection</button>
+          </form>
+          <form method="post" class="rounded border border-gold/40 bg-amber-50/60 p-4">
+            {% csrf_token %}<input type="hidden" name="device" value="{{ device.pk }}"><input type="hidden" name="action" value="dispose">
+            <h3 class="font-bold">Dispose device</h3>
+            <p class="mt-2 text-sm text-slate-600">Send the device to the School Parts Bank and request its calculated donation payout.</p>
+            <button class="btn mt-3 w-full bg-gold text-white">Dispose device</button>
+          </form>
+        </div>
+        {% elif device.status == 'SCHEDULED_FOR_COLLECTION' %}
+        <div class="mt-4 rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
+          Collection scheduled{% if device.days_until_collection != None %} in {{ device.days_until_collection }} days{% endif %}
+        </div>
+        {% endif %}
+      </article>
       {% empty %}<div class="panel p-10 text-center text-sm text-slate-500 md:col-span-2">Register a device before requesting disposition.</div>{% endfor %}
     </div>
     <section class="mt-6 panel overflow-hidden"><div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Donation disbursement status</h2></div><div class="divide-y divide-slate-100">{% for entry in donations %}<div class="p-5"><div class="flex flex-wrap items-start justify-between gap-3"><div><p class="font-bold">{{ entry.device.device_name }} · {{ entry.device.make }} {{ entry.device.model_name }}</p><p class="mt-1 text-xs text-slate-500">Current value {{ entry.current_value|kes_format }} · Cashback {{ entry.cashback_payout|kes_format }}</p></div>{% if entry.payout_status == 'REJECTED' %}<span class="badge bg-red-100 text-danger">Disbursement not accepted</span>{% elif entry.payout_status == 'APPROVED' %}<span class="badge bg-blue-100 text-blue-700">Approved</span>{% elif entry.payout_status == 'PAID' %}<span class="badge bg-green-100 text-forest">Paid</span>{% else %}<span class="badge bg-amber-100 text-amber">Pending approval</span>{% endif %}</div>{% if entry.rejection_reason %}<p class="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger"><strong>Rejection reason:</strong> {{ entry.rejection_reason }}</p>{% endif %}</div>{% empty %}<p class="p-5 text-sm text-slate-500">No Parts Bank donation submissions yet.</p>{% endfor %}</div></section>
@@ -91,6 +183,64 @@ document.querySelectorAll('[data-disbursement-toggle]').forEach((button) => {
     panel.hidden = !panel.hidden;
     button.setAttribute('aria-expanded', String(!panel.hidden));
     button.textContent = panel.hidden ? 'View info' : 'Hide info';
+  });
+});
+
+document.querySelectorAll('[data-disbursement-form]').forEach((form) => {
+  const actionInput = form.querySelector('[data-disbursement-action]');
+  const rejectionField = form.querySelector('[data-rejection-field]');
+  const rejectionReason = rejectionField.querySelector('textarea');
+  const submitButton = form.querySelector('[data-disbursement-submit]');
+
+  form.querySelectorAll('[data-disbursement-decision]').forEach((decision) => {
+    decision.addEventListener('change', () => {
+      const rejected = form.querySelector('[data-disbursement-decision]:checked').value === 'reject';
+      rejectionField.hidden = !rejected;
+      rejectionReason.disabled = !rejected;
+      rejectionReason.required = rejected;
+      if (!rejected) {
+        rejectionReason.value = '';
+      }
+      actionInput.value = rejected ? 'reject_donation' : 'approve_donation';
+      submitButton.className = rejected ? 'btn bg-danger text-white' : 'btn bg-forest text-white';
+      submitButton.textContent = rejected ? 'DENY DISBURSEMENT' : submitButton.dataset.acceptLabel;
+    });
+  });
+});
+
+document.querySelectorAll('[data-open-disposition-modal]').forEach((button) => {
+  button.addEventListener('click', () => {
+    const modal = document.getElementById(button.dataset.openDispositionModal);
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  });
+});
+document.querySelectorAll('[data-disposition-modal]').forEach((modal) => {
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal || event.target.closest('[data-close-disposition-modal]')) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+  });
+});
+document.querySelectorAll('[data-modal-disbursement-form]').forEach((form) => {
+  const denialReason = form.querySelector('[data-modal-denial-reason]');
+  const denyButton = form.querySelector('[data-modal-deny]');
+  denyButton.addEventListener('click', () => {
+    if (!denialReason.value.trim()) {
+      denialReason.disabled = false;
+      denialReason.required = true;
+      denialReason.setCustomValidity('Enter a reason before denying this disbursement.');
+      denialReason.focus();
+      denialReason.reportValidity();
+      return;
+    }
+    denialReason.setCustomValidity('');
+    denialReason.disabled = false;
+    denialReason.required = true;
+    const action = form.querySelector('[data-modal-action]');
+    action.value = 'reject_donation';
+    form.requestSubmit();
   });
 });
 </script>
