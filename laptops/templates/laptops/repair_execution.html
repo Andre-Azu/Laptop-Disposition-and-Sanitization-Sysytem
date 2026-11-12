@@ -23,9 +23,28 @@
       <div id="repairProgressBar" class="h-full rounded-full bg-brand transition-all duration-300" style="width: {% widthratio repair_completed_count repair_total_count 100 %}%"></div>
     </div>
   </section>
+  <section class="panel p-5" aria-labelledby="repair-outcomes-heading">
+    <h2 id="repair-outcomes-heading" class="text-xs font-bold uppercase tracking-[.16em] text-brand">Recorded component outcomes</h2>
+    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+      <div class="rounded-lg border border-green-200 bg-green-50 p-4">
+        <h3 class="text-sm font-bold text-forest">Fixed / Repaired (<span data-outcome-count="FIXED">{{ fixed_components|length }}</span>)</h3>
+        <div class="mt-2 flex flex-wrap gap-2" data-outcome-list="FIXED">
+          {% for name in fixed_components %}<span class="badge bg-green-100 text-forest" data-component-name="{{ name }}">{{ name }}</span>{% endfor %}
+        </div>
+        <p class="mt-2 text-xs text-slate-500" data-outcome-empty="FIXED"{% if fixed_components %} hidden{% endif %}>No components recorded yet.</p>
+      </div>
+      <div class="rounded-lg border border-red-200 bg-red-50 p-4">
+        <h3 class="text-sm font-bold text-danger">Not fixed / Not repaired (<span data-outcome-count="NOT_FIXED">{{ not_fixed_components|length }}</span>)</h3>
+        <div class="mt-2 flex flex-wrap gap-2" data-outcome-list="NOT_FIXED">
+          {% for name in not_fixed_components %}<span class="badge bg-red-100 text-danger" data-component-name="{{ name }}">{{ name }}</span>{% endfor %}
+        </div>
+        <p class="mt-2 text-xs text-slate-500" data-outcome-empty="NOT_FIXED"{% if not not_fixed_components %} hidden{% endif %}>No components recorded yet.</p>
+      </div>
+    </div>
+  </section>
   {% for component in flagged_components %}
   {% with key=component.name|lower %}
-  <article class="repair-component panel transition-all duration-200{% if component.name in missing_components %} border-rose-500 ring-4 ring-rose-500/20{% endif %}" data-component-card>
+  <article class="repair-component panel transition-all duration-200{% if component.name in missing_components %} border-rose-500 ring-4 ring-rose-500/20{% endif %}" data-component-card data-component-name="{{ component.name }}">
     <div class="border-b border-slate-100 px-5 py-4">
       <h2 class="text-lg font-extrabold">{{ component.name }}</h2>
       <div class="mt-2 flex flex-wrap gap-2 text-xs">
@@ -51,7 +70,8 @@
   {% endwith %}
   {% empty %}
   <div class="panel p-10 text-center">
-    <p class="font-bold">No flagged components found for this device.</p>
+    {% if repair_completed_count %}<p class="font-bold">All flagged components have an outcome recorded above.</p>
+    {% else %}<p class="font-bold">No flagged components found for this device.</p>{% endif %}
   </div>
   {% endfor %}
 
@@ -60,7 +80,11 @@
     <textarea id="technician_notes" name="technician_notes" rows="4" class="mt-2" placeholder="Add optional service notes, work performed, or parts replaced.">{{ comments }}</textarea>
   </section>
   <div class="flex justify-end">
+    {% if repair_already_finalized %}
+    <p class="self-center text-sm font-bold text-forest">Repair outcomes finalized.</p>
+    {% else %}
     <button type="submit" class="btn btn-primary">FINALIZE &amp; SAVE REPAIR</button>
+    {% endif %}
   </div>
 </form>
 {% endblock %}
@@ -74,6 +98,35 @@
   const progressText = document.getElementById('repairProgressText');
   const progressPercent = document.getElementById('repairProgressPercent');
   const cards = Array.from(form.querySelectorAll('[data-component-card]'));
+  const outcomes = {};
+  form.querySelectorAll('[data-outcome-list]').forEach(function (list) {
+    const result = list.dataset.outcomeList;
+    list.querySelectorAll('[data-component-name]').forEach(function (item) {
+      outcomes[item.dataset.componentName] = result;
+    });
+  });
+
+  function renderOutcomes() {
+    ['FIXED', 'NOT_FIXED'].forEach(function (result) {
+      const list = form.querySelector('[data-outcome-list="' + result + '"]');
+      const count = form.querySelector('[data-outcome-count="' + result + '"]');
+      const empty = form.querySelector('[data-outcome-empty="' + result + '"]');
+      if (!list) return;
+      list.replaceChildren();
+      const names = Object.keys(outcomes).filter(function (name) {
+        return outcomes[name] === result;
+      });
+      names.forEach(function (name) {
+        const item = document.createElement('span');
+        item.className = result === 'FIXED' ? 'badge bg-green-100 text-forest' : 'badge bg-red-100 text-danger';
+        item.dataset.componentName = name;
+        item.textContent = name;
+        list.appendChild(item);
+      });
+      if (count) count.textContent = String(names.length);
+      if (empty) empty.hidden = names.length > 0;
+    });
+  }
 
   function updateProgress() {
     const progressSection = document.getElementById('repairProgressSection');
@@ -102,6 +155,8 @@
   cards.forEach(function (card, index) {
     card.querySelectorAll('input[type="radio"]').forEach(function (radio) {
       radio.addEventListener('change', function () {
+        outcomes[card.dataset.componentName] = radio.value;
+        renderOutcomes();
         card.classList.remove('border-rose-500', 'ring-4', 'ring-rose-500/20');
         const message = card.querySelector('.missing-message');
         if (message) message.classList.add('hidden');

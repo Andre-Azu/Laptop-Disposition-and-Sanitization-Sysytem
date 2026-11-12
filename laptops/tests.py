@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import DeviceRegistrationForm, OwnerSelfAssessmentForm, RepairEvaluationForm
-from .models import AuditLog, CollectionSlot, Device, DonationLedger, ITAssessment, ITAssessmentScoringEngine, OwnerSelfAssessment, RepairEvaluation, SanitizationCertificate, SanitizationJob, TechnicalAssessment, User
+from .models import AuditLog, CollectionSlot, Device, DonationLedger, ITAssessment, ITAssessmentScoringEngine, OwnerSelfAssessment, RepairEvaluation, RepairExecutionDraft, SanitizationCertificate, SanitizationJob, TechnicalAssessment, User
 from .utils import calculate_device_valuation, format_kes
 
 
@@ -438,7 +438,11 @@ class WorkflowTests(TestCase):
 
         self.assertIn(self.device, response.context["devices"])
         self.assertContains(response, "Keep and schedule collection")
-        self.assertContains(response, "Dispose device")
+        self.assertContains(response, "Donate device")
+        self.assertContains(response, format_kes(calculate_device_valuation(self.device)["cashback_amount"]))
+        self.assertContains(response, 'name="scheduled_for" type="datetime-local"')
+        self.assertContains(response, "<details")
+        self.assertNotContains(response, "<details open")
 
     def test_owner_keep_choice_schedules_collection_and_removes_disposition_decision(self):
         self.device.status = Device.Status.DISPOSITION_PENDING
@@ -457,6 +461,24 @@ class WorkflowTests(TestCase):
         self.device.refresh_from_db()
         self.assertEqual(self.device.status, Device.Status.SCHEDULED_FOR_COLLECTION)
         self.assertTrue(CollectionSlot.objects.filter(device=self.device, requested_by=self.manager).exists())
+
+    def test_owner_can_donate_device_from_disposition_page(self):
+        self.device.status = Device.Status.DISPOSITION_PENDING
+        self.device.save(update_fields=["status"])
+        valuation = calculate_device_valuation(self.device)
+        self.client.force_login(self.manager)
+
+        response = self.client.post(reverse("disposition"), {
+            "device": self.device.pk,
+            "action": "donate",
+        })
+
+        self.assertRedirects(response, reverse("disposition"))
+        ledger = DonationLedger.objects.get(device=self.device)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.status, Device.Status.DONATED)
+        self.assertEqual(ledger.payout_status, DonationLedger.Status.PENDING)
+        self.assertEqual(ledger.cashback_kes, valuation["cashback_amount"])
 
     def test_assessment_lookup_excludes_it_verified_and_donated_devices(self):
         self.device.status = Device.Status.PENDING_PROCESSING
@@ -622,6 +644,9 @@ class WorkflowTests(TestCase):
             set(RepairEvaluation.objects.filter(device=self.device).values_list("component_name", flat=True)),
             {"Screen", "Battery"},
         )
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.status, Device.Status.DISPOSITION_PENDING)
+        self.assertEqual(self.device.repair_tag, "complete")
 
     def test_repair_queue_includes_devices_sent_by_manager_without_it_assessment(self):
         OwnerSelfAssessment.objects.create(
@@ -647,6 +672,106 @@ class WorkflowTests(TestCase):
         self.assertEqual(sanitization_response.status_code, 200)
         self.assertEqual(repair_response.status_code, 200)
         self.assertIn(self.device, overview_response.context["devices"])
+
+    def test_repair_draft_keeps_component_outcomes_and_reports_them_by_status(self):
+        OwnerSelfAssessment.objects.create(
+            device=self.device,
+            chosen_pathway="REPAIR",
+            screen_status="NOT_WORKING",
+            keyboard_status="PARTIALLY_WORKING",
+        )
+        ITAssessment.objects.create(
+            device=self.device,
+            assessed_by=self.admin,
+            completed_at=timezone.now(),
+        )
+        self.device.status = Device.Status.REPAIR_PROCESSING
+        self.device.save(update_fields=["status"])
+        self.client.force_login(self.admin)
+
+        execution_url = reverse("repair_execution", args=[self.device.pk])
+        first_save = self.client.post(execution_url, {
+            "component_screen": "FIXED",
+            "save_draft": "yes",
+        })
+
+        self.assertEqual(first_save.status_code, 200)
+        self.assertEqual(first_save.json(), {"saved": True, "answered": 1, "total": 2})
+        execution_page = self.client.get(execution_url)
+        self.assertContains(execution_page, "Fixed / Repaired")
+        self.assertContains(execution_page, 'data-outcome-count="FIXED">1</span>')
+        self.assertContains(execution_page, "Screen")
+        self.assertNotContains(execution_page, 'data-component-card data-component-name="Screen"')
+        self.assertContains(execution_page, "Keyboard")
+        draft_report = self.client.get(reverse("assessment_report", args=[self.device.pk]))
+        self.assertContains(draft_report, "1 repaired")
+        self.assertContains(draft_report, "0 not repaired")
+        self.assertContains(draft_report, "Screen")
+
+        finalized = self.client.post(execution_url, {
+            "component_keyboard": "NOT_FIXED",
+            "technician_notes": "Keyboard replacement unavailable.",
+        })
+
+        self.assertEqual(finalized.status_code, 302)
+        self.assertEqual(
+            dict(RepairEvaluation.objects.filter(device=self.device).values_list("component_name", "repair_result")),
+            {"Screen": "FIXED", "Keyboard": "NOT_FIXED"},
+        )
+        self.assertFalse(RepairExecutionDraft.objects.filter(device=self.device).exists())
+        completed_page = self.client.get(execution_url)
+        self.assertContains(completed_page, 'data-outcome-count="FIXED">1</span>')
+        self.assertContains(completed_page, 'data-outcome-count="NOT_FIXED">1</span>')
+        self.assertNotContains(completed_page, 'data-component-card data-component-name="Screen"')
+        self.assertContains(completed_page, "Repair outcomes finalized.")
+        duplicate_finalization = self.client.post(execution_url)
+        self.assertEqual(duplicate_finalization.status_code, 302)
+        self.assertEqual(RepairEvaluation.objects.filter(device=self.device).count(), 2)
+
+        report = self.client.get(reverse("assessment_report", args=[self.device.pk]))
+        self.assertContains(report, "1 repaired")
+        self.assertContains(report, "1 not repaired")
+        self.assertContains(report, "Screen")
+        self.assertContains(report, "Keyboard")
+        self.assertContains(report, "Fixed / Repaired")
+        self.assertContains(report, "Not fixed / Not repaired")
+
+    def test_failed_sanitization_and_repair_complete_both_pathway(self):
+        OwnerSelfAssessment.objects.create(
+            device=self.device,
+            chosen_pathway="BOTH",
+            screen_status="NOT_WORKING",
+        )
+        TechnicalAssessment.objects.create(
+            device=self.device,
+            assessed_by=self.admin,
+            screen_status="NOT_WORKING",
+        )
+        self.device.status = Device.Status.REPAIR_AND_SANITIZATION_PENDING
+        self.device.save(update_fields=["status"])
+        self.client.force_login(self.admin)
+
+        self.client.post(reverse("sanitization"), {
+            "device": self.device.pk,
+            "action": "fail",
+            "failure_notes": "Wipe verification failed",
+        })
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.status, Device.Status.REPAIR_AND_SANITIZATION_PENDING)
+        self.assertEqual(self.device.sanitization_tag, "complete")
+        self.assertEqual(self.device.repair_tag, "pending")
+
+        response = self.client.post(reverse("repair_execution", args=[self.device.pk]), {
+            "component_screen": "NOT_FIXED",
+            "technician_notes": "Replacement part unavailable",
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.status, Device.Status.DISPOSITION_PENDING)
+        self.assertEqual(self.device.repair_tag, "complete")
+        self.assertEqual(self.device.sanitization_tag, "complete")
+        self.assertEqual(RepairEvaluation.objects.get(device=self.device).repair_result, "NOT_FIXED")
 
     def test_completed_assessment_unlocks_repair_queue_despite_stale_status(self):
         OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="REPAIR")
@@ -782,8 +907,27 @@ class WorkflowTests(TestCase):
         self.client.force_login(self.admin)
         self.client.post(reverse("sanitization"), {"device": self.device.pk, "action": "fail", "failure_notes": "Storage check failed"})
         self.device.refresh_from_db()
-        self.assertEqual(self.device.status, Device.Status.SANITIZATION_FAILED)
+        self.assertEqual(self.device.status, Device.Status.DISPOSITION_PENDING)
+        self.assertEqual(self.device.sanitization_tag, "complete")
         self.assertEqual(self.device.failure_notes, "Storage check failed")
+        self.assertEqual(SanitizationJob.objects.get(device=self.device).status, SanitizationJob.FAIL)
+
+    def test_sanitization_execution_failure_completes_sanitization_pathway(self):
+        OwnerSelfAssessment.objects.create(device=self.device, chosen_pathway="SANITIZATION")
+        self.device.status = Device.Status.SANITIZATION_PROCESSING
+        self.device.save(update_fields=["status"])
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("sanitization_execution", args=[self.device.pk]),
+            {"action": "FAIL", "technician_notes": "Drive could not be sanitized"},
+        )
+
+        self.assertRedirects(response, reverse("sanitization"))
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.status, Device.Status.DISPOSITION_PENDING)
+        self.assertEqual(self.device.sanitization_tag, "complete")
+        self.assertEqual(self.device.failure_notes, "Drive could not be sanitized")
         self.assertEqual(SanitizationJob.objects.get(device=self.device).status, SanitizationJob.FAIL)
 
     def test_ewaste_metric_is_donation_value_not_cashback(self):
@@ -791,6 +935,37 @@ class WorkflowTests(TestCase):
         self.client.force_login(self.admin)
         response = self.client.get(reverse("overview"))
         self.assertEqual(response.context["ewaste_recovered"], Decimal("100000"))
+
+    def test_approved_donation_cashback_appears_in_device_manager_rewards(self):
+        ledger = DonationLedger.objects.create(
+            device=self.device,
+            donated_by=self.manager,
+            donation_value_kes=Decimal("100000"),
+            cashback_kes=Decimal("3000"),
+            payout_status=DonationLedger.Status.PENDING,
+        )
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("home"))
+        self.assertEqual(response.context["reward_total"], Decimal("0.00"))
+
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("disposition"), {
+            "action": "approve_donation",
+            "entry": ledger.pk,
+        })
+        self.assertRedirects(response, reverse("disposition"))
+        ledger.refresh_from_db()
+        self.assertEqual(ledger.payout_status, DonationLedger.Status.APPROVED)
+
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("home"))
+        self.assertEqual(response.context["reward_total"], Decimal("3000"))
+        self.assertContains(response, "Cashback rewards")
+        self.assertContains(response, format_kes(Decimal("3000")))
+
+        response = self.client.get(reverse("profile"))
+        self.assertContains(response, "Cashback rewards")
+        self.assertContains(response, "Approved")
 
     def test_overview_orders_devices_by_most_recent_audit_activity(self):
         older_activity = self.make_device(device_name="Older activity laptop")

@@ -88,8 +88,8 @@ function setFilter(filter) {
       </div>
     </div>
     <div class="panel overflow-hidden">
-      <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Donation rewards ledger</h2></div>
-      <div class="divide-y divide-slate-100">{% for entry in donations %}<div class="flex items-center justify-between gap-3 px-5 py-3 text-sm"><div><p class="font-bold">{{ entry.device.device_name }}</p><p class="text-xs text-slate-500">{{ entry.donated_at|date:'d M Y' }}</p></div><div class="text-right"><p class="font-bold">{{ entry.cashback_kes|kes_format }}</p><span class="badge bg-amber-100 text-amber">{{ entry.payout_status }}</span></div></div>{% empty %}<p class="p-5 text-sm text-slate-500">No reward entries yet.</p>{% endfor %}</div>
+      <div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Cashback rewards</h2></div>
+      <div class="divide-y divide-slate-100">{% for entry in donations %}<div class="flex items-center justify-between gap-3 px-5 py-3 text-sm"><div><p class="font-bold">{{ entry.device.device_name }}</p><p class="text-xs text-slate-500">{{ entry.donated_at|date:'d M Y' }}</p></div><div class="text-right"><p class="font-bold">{{ entry.cashback_kes|kes_format }}</p>{% if entry.payout_status == 'APPROVED' %}<span class="badge bg-blue-100 text-blue-700">Approved</span>{% elif entry.payout_status == 'PAID' %}<span class="badge bg-green-100 text-forest">Paid</span>{% elif entry.payout_status == 'REJECTED' %}<span class="badge bg-red-100 text-danger">Rejected</span>{% else %}<span class="badge bg-amber-100 text-amber">Pending approval</span>{% endif %}</div></div>{% empty %}<p class="p-5 text-sm text-slate-500">No reward entries yet.</p>{% endfor %}</div>
     </div>
   </section>
 </div>

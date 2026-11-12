@@ -40,9 +40,10 @@ def _advance_both_stage(device, completed_stage):
         if device.repair_tag in {"complete", "completed"}:
             device.status = Device.Status.DISPOSITION_PENDING
             update_fields.append("status")
-        elif device.repair_tag != "pending":
+        else:
             device.repair_tag = "pending"
-            update_fields.append("repair_tag")
+            device.status = Device.Status.REPAIR_AND_SANITIZATION_PENDING
+            update_fields.extend(["repair_tag", "status"])
     elif completed_stage == "repair":
         device.repair_tag = "complete"
         update_fields.append("repair_tag")
@@ -51,7 +52,8 @@ def _advance_both_stage(device, completed_stage):
             update_fields.append("status")
         else:
             device.sanitization_tag = "pending"
-            update_fields.append("sanitization_tag")
+            device.status = Device.Status.REPAIR_AND_SANITIZATION_PENDING
+            update_fields.extend(["sanitization_tag", "status"])
 
     if update_fields:
         update_fields.append("updated_at")
@@ -165,7 +167,9 @@ def home(request):
         device.market_score = assessment.overall_score if assessment else 0
         device.market_rating = assessment.rating_label if assessment else "NOT ASSESSED"
         device.market_repairs = list(device.repairs.filter(repair_result="FIXED").select_related("technician"))
-    reward_total = request.user.donation_rewards.filter(payout_status=DonationLedger.Status.PAID).aggregate(total=Sum("cashback_kes"))["total"] or Decimal("0.00")
+    reward_total = request.user.donation_rewards.filter(
+        payout_status__in=[DonationLedger.Status.APPROVED, DonationLedger.Status.PAID]
+    ).aggregate(total=Sum("cashback_kes"))["total"] or Decimal("0.00")
     recovered = DonationLedger.objects.filter(payout_status=DonationLedger.Status.PAID).aggregate(total=Sum("donation_value_kes"))["total"] or Decimal("0.00")
     return render(request, "laptops/dashboard.html", {"devices": devices, "inventory": public_inventory, "asset_count": devices.count(), "reward_total": reward_total, "recovered_total": recovered})
 
@@ -597,9 +601,24 @@ def assessment_report(request, device_id):
     if not assessment:
         messages.warning(request, "This device does not have a completed IT assessment report.")
         return redirect("it_assessments_portal")
+    repair_statuses = list(device.repairs.order_by("created_at", "pk").values("component_name", "repair_result"))
+    try:
+        repair_draft = device.repair_execution_draft
+    except RepairExecutionDraft.DoesNotExist:
+        repair_draft = None
+    if repair_draft:
+        saved_components = {item["component_name"] for item in repair_statuses}
+        repair_statuses.extend(
+            {"component_name": name, "repair_result": result}
+            for name, result in (repair_draft.answers or {}).items()
+            if result in ("FIXED", "NOT_FIXED") and name not in saved_components
+        )
     return render(request, "laptops/assessment_report.html", {
         "device": device,
         "assessment": assessment,
+        "repair_statuses": repair_statuses,
+        "fixed_repairs": [item for item in repair_statuses if item["repair_result"] == "FIXED"],
+        "not_fixed_repairs": [item for item in repair_statuses if item["repair_result"] == "NOT_FIXED"],
     })
 
 
@@ -811,10 +830,14 @@ def sanitization(request):
     if filter_name not in {"pending", "completed", "failed"}:
         filter_name = "pending"
 
-    pending_queryset = base_devices.exclude(status=Device.Status.DISPOSITION_PENDING).exclude(certificate__isnull=False)
+    pending_queryset = base_devices.exclude(status=Device.Status.DISPOSITION_PENDING).exclude(
+        Q(certificate__isnull=False) | Q(sanitization_tag__in=["complete", "completed"])
+    )
     failed_queryset = Device.objects.filter(
         self_assessment__chosen_pathway__in=["SANITIZATION", "BOTH"],
-        status=Device.Status.SANITIZATION_FAILED,
+    ).filter(
+        Q(status=Device.Status.SANITIZATION_FAILED)
+        | Q(sanitization_jobs__status=SanitizationJob.FAIL)
     ).distinct().select_related("owner", "self_assessment", "it_assessment").prefetch_related("sanitization_jobs")
     completed_queryset = SanitizationCertificate.objects.select_related("device", "device__owner", "verified_by")
 
@@ -863,14 +886,13 @@ def sanitization(request):
                 record_audit(device, request.user, "Sanitization mock passed", "Mock wipe test passed; IT verification is required.")
                 messages.success(request, "Mock sanitization passed. Verify the result to issue a certificate.")
             else:
-                device.status = Device.Status.SANITIZATION_FAILED
-                device.sanitization_tag = "SANITIZATION_FAILED"
+                device.sanitization_tag = "complete"
                 device.failure_notes = request.POST.get("failure_notes", "Mock sanitization failed.").strip() or "Mock sanitization failed."
+                if not _advance_both_stage(device, "sanitization"):
+                    device.status = Device.Status.DISPOSITION_PENDING
                 record_audit(device, request.user, "Sanitization failed", device.failure_notes)
-                messages.error(request, "Mock sanitization failed. Device moved to the failed queue.")
-            device.save(update_fields=["status", "sanitization_tag", "updated_at"])
-            if action == "fail":
-                device.save(update_fields=["failure_notes"])
+                messages.error(request, "Mock sanitization failure recorded as a completed outcome.")
+            device.save(update_fields=["status", "sanitization_tag", "failure_notes", "updated_at"])
         elif action == "verify" and job and job.status == SanitizationJob.PASS:
             cert_code = uuid.uuid4()
             crypto_hash = hashlib.sha256(f"{device.serial_number}:{cert_code}:{timezone.now().isoformat()}".encode()).hexdigest()
@@ -964,9 +986,10 @@ def sanitization_execution(request, device_id):
         notes = request.POST.get("technician_notes", "").strip()
 
         if action == "FAIL":
-            device.status = Device.Status.SANITIZATION_FAILED
-            device.sanitization_tag = "SANITIZATION_FAILED"
+            device.sanitization_tag = "complete"
             device.failure_notes = notes or "Sanitization failed."
+            if not _advance_both_stage(device, "sanitization"):
+                device.status = Device.Status.DISPOSITION_PENDING
             device.save(update_fields=["status", "sanitization_tag", "failure_notes", "updated_at"])
             SanitizationJob.objects.create(device=device, status=SanitizationJob.FAIL)
             record_audit(device, request.user, "Sanitization failed", notes or "Sanitization failed at the workstation.")
@@ -1133,14 +1156,15 @@ def repairs(request):
         original_component_count = len(flagged_components)
         try:
             repair_draft = device.repair_execution_draft
-            completed_answers = repair_draft.answers or {}
+            draft_answers = repair_draft.answers or {}
         except RepairExecutionDraft.DoesNotExist:
-            completed_answers = {}
+            draft_answers = {}
 
         completed_components = {
             component_name
-            for component_name, result in completed_answers.items()
+            for component_name, result in draft_answers.items()
             if result in ("FIXED", "NOT_FIXED")
+            and component_name in {component["name"] for component in flagged_components}
         }
         owner_flags = [flag for flag in owner_flags if flag[0] not in completed_components]
         diagnostic_flags = [flag for flag in diagnostic_flags if flag[0] not in completed_components]
@@ -1238,12 +1262,13 @@ def repairs(request):
                     comments=comments,
                 )
             if result == "NOT_FIXED":
-                device.status = Device.Status.FAILED
                 device.failure_notes = comments
-                device.save(update_fields=["failure_notes"])
             else:
-                device.status = Device.Status.PENDING_PROCESSING
-            device.save(update_fields=["status", "updated_at"])
+                device.failure_notes = None
+            device.repair_tag = "complete"
+            if not _advance_both_stage(device, "repair"):
+                device.status = Device.Status.DISPOSITION_PENDING
+            device.save(update_fields=["status", "failure_notes", "repair_tag", "updated_at"])
             component_names = ", ".join(component for component, _ in device.repairable_components)
             record_audit(device, request.user, f"Repair evaluation: {form.cleaned_data['repair_result']}", f"{component_names}: {comments}")
             messages.success(request, "Repair evaluation recorded.")
@@ -1277,16 +1302,32 @@ def repair_execution(request, device_id):
     except RepairExecutionDraft.DoesNotExist:
         draft_answers = {}
         draft_comments = ""
+    outcome_answers = {
+        evaluation.component_name: evaluation.repair_result
+        for evaluation in device.repairs.order_by("created_at", "pk")
+        if evaluation.repair_result in ("FIXED", "NOT_FIXED")
+    }
+    outcome_answers.update(draft_answers)
     completed_components = {
         component_name
-        for component_name, result in draft_answers.items()
+        for component_name, result in outcome_answers.items()
         if result in ("FIXED", "NOT_FIXED")
+        and component_name in {component["name"] for component in flagged_components}
+    }
+    outcome_answers = {
+        component_name: result
+        for component_name, result in outcome_answers.items()
+        if component_name in completed_components
     }
     flagged_components = [
         component
         for component in flagged_components
         if component["name"] not in completed_components
     ]
+    repair_already_finalized = not flagged_components and not draft_answers and bool(outcome_answers)
+    if request.method == "POST" and repair_already_finalized:
+        messages.info(request, "All flagged component outcomes have already been finalized.")
+        return redirect("repairs")
 
     if request.method == "POST":
         answers = {}
@@ -1296,16 +1337,17 @@ def repair_execution(request, device_id):
             if value in ("FIXED", "NOT_FIXED"):
                 answers[component["name"]] = value
 
+        merged_answers = {**outcome_answers, **answers}
         comments = request.POST.get("technician_notes", request.POST.get("comments", draft_comments)).strip()
         RepairExecutionDraft.objects.update_or_create(
             device=device,
-            defaults={"answers": answers, "comments": comments, "updated_by": request.user},
+            defaults={"answers": merged_answers, "comments": comments, "updated_by": request.user},
         )
         if request.POST.get("save_draft") == "yes":
-            return JsonResponse({"saved": True, "answered": len(answers), "total": len(flagged_components)})
+            return JsonResponse({"saved": True, "answered": len(merged_answers), "total": original_component_count})
 
         missing_components = []
-        results = {}
+        results = dict(merged_answers)
         for component in flagged_components:
             key = "component_" + slugify(component["name"]).replace("-", "")
             value = request.POST.get(key)
@@ -1327,6 +1369,8 @@ def repair_execution(request, device_id):
                 "posted_results": results,
                 "repair_completed_count": len(completed_components),
                 "repair_total_count": original_component_count,
+                "fixed_components": [name for name, result in results.items() if result == "FIXED"],
+                "not_fixed_components": [name for name, result in results.items() if result == "NOT_FIXED"],
             }, status=400)
 
         for component_name, result in results.items():
@@ -1341,16 +1385,13 @@ def repair_execution(request, device_id):
 
         if "NOT_FIXED" in results.values():
             device.failure_notes = comments
-            device.status = Device.Status.FAILED
-            device.repair_tag = "incomplete"
         else:
             device.failure_notes = None
-            device.repair_tag = "complete"
+        device.repair_tag = "complete"
         device.save(update_fields=["status", "failure_notes", "repair_tag", "updated_at"])
-        if "NOT_FIXED" not in results.values():
-            if not _advance_both_stage(device, "repair"):
-                device.status = Device.Status.DISPOSITION_PENDING
-                device.save(update_fields=["status", "updated_at"])
+        if not _advance_both_stage(device, "repair"):
+            device.status = Device.Status.DISPOSITION_PENDING
+            device.save(update_fields=["status", "updated_at"])
 
         component_names = ", ".join(results.keys())
         record_audit(device, request.user, "Repair execution finalized", f"{component_names}: {comments}")
@@ -1358,15 +1399,18 @@ def repair_execution(request, device_id):
         return redirect("repairs")
 
     for component in flagged_components:
-        component["posted_result"] = draft_answers.get(component["name"])
+        component["posted_result"] = outcome_answers.get(component["name"])
     return render(request, "laptops/repair_execution.html", {
         "device": device,
         "flagged_components": flagged_components,
         "comments": draft_comments,
         "missing_components": [],
-        "posted_results": draft_answers,
+        "posted_results": outcome_answers,
         "repair_completed_count": len(completed_components),
         "repair_total_count": original_component_count,
+        "fixed_components": [name for name, result in outcome_answers.items() if result == "FIXED"],
+        "not_fixed_components": [name for name, result in outcome_answers.items() if result == "NOT_FIXED"],
+        "repair_already_finalized": repair_already_finalized,
     })
 
 
@@ -1604,6 +1648,8 @@ def disposition(request):
     for device in active_devices:
         slot = active_slots_by_device.get(device.pk)
         device.days_until_collection = max(0, (timezone.localdate(slot.scheduled_for) - timezone.localdate()).days) if slot else None
+        if device.status == Device.Status.DISPOSITION_PENDING:
+            device.cashback_amount = calculate_device_valuation(device)["cashback_amount"]
     owner_donations = DonationLedger.objects.filter(donated_by=request.user).select_related(
         "device",
         "device__technical_assessment",

@@ -48,4 +48,30 @@
     </div>
   </section>
 </div>
+
+<section class="panel mt-5 overflow-hidden">
+  <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+    <div><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Repair status</p><h2 class="mt-1 text-lg font-extrabold text-navy">Flagged component outcomes</h2></div>
+    <div class="flex gap-2 text-xs font-bold">
+      <span class="badge bg-green-100 text-forest">{{ fixed_repairs|length }} repaired</span>
+      <span class="badge bg-red-100 text-danger">{{ not_fixed_repairs|length }} not repaired</span>
+    </div>
+  </div>
+  <div class="grid gap-5 p-5 md:grid-cols-2">
+    <section>
+      <h3 class="text-sm font-bold text-forest">Fixed / Repaired</h3>
+      <div class="mt-2 flex flex-wrap gap-2">
+        {% for repair in fixed_repairs %}<span class="badge bg-green-100 text-forest">{{ repair.component_name }}</span>
+        {% empty %}<span class="text-sm text-slate-400">None recorded</span>{% endfor %}
+      </div>
+    </section>
+    <section>
+      <h3 class="text-sm font-bold text-danger">Not fixed / Not repaired</h3>
+      <div class="mt-2 flex flex-wrap gap-2">
+        {% for repair in not_fixed_repairs %}<span class="badge bg-red-100 text-danger">{{ repair.component_name }}</span>
+        {% empty %}<span class="text-sm text-slate-400">None recorded</span>{% endfor %}
+      </div>
+    </section>
+  </div>
+</section>
 {% endblock %}
