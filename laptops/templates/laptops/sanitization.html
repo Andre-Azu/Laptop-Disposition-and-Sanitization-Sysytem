@@ -25,7 +25,7 @@
     <span class="grid h-12 w-12 place-items-center rounded-full bg-emerald-100 text-xl font-extrabold text-emerald-700">{{ completed_count }}</span>
   </a>
   <a href="?sanitization_filter=failed{% if query %}&q={{ query|urlencode }}{% endif %}" class="panel flex items-center justify-between p-5 transition hover:border-red-400 {% if sanitization_filter == 'failed' %}ring-2 ring-red-400{% endif %}">
-    <div><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Failed sanitizations</p><p class="mt-2 text-sm font-semibold text-navy">Requires attention</p></div>
+    <div><p class="text-xs font-bold uppercase tracking-wide text-slate-500">Failed sanitizations</p></div>
     <span class="grid h-12 w-12 place-items-center rounded-full bg-red-100 text-xl font-extrabold text-red-700">{{ failed_count }}</span>
   </a>
 </div>

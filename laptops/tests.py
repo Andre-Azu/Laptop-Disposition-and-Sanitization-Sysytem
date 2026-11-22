@@ -39,6 +39,45 @@ class WorkflowTests(TestCase):
             with self.subTest(page=name):
                 self.assertEqual(self.client.get(reverse(name)).status_code, 200)
 
+    def test_admin_disposition_page_has_workflow_tiles_and_collection_slot_section(self):
+        CollectionSlot.objects.create(
+            device=self.device,
+            requested_by=self.manager,
+            scheduled_for=timezone.now() + datetime.timedelta(days=1),
+            location="Main campus",
+        )
+        approved_device = self.make_device(device_name="Approved pickup")
+        CollectionSlot.objects.create(
+            device=approved_device,
+            requested_by=self.manager,
+            scheduled_for=timezone.now() + datetime.timedelta(days=2),
+            approved=True,
+        )
+        collected_device = self.make_device(device_name="Collected pickup")
+        CollectionSlot.objects.create(
+            device=collected_device,
+            requested_by=self.manager,
+            scheduled_for=timezone.now() - datetime.timedelta(days=1),
+            approved=True,
+            collected=True,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("disposition"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'href="#collection-slots"')
+        self.assertContains(response, "Collection slots")
+        self.assertContains(response, "3 scheduled requests · Manage pickups")
+        self.assertContains(response, 'id="collection-slots"')
+        self.assertContains(response, "Approve collection slot")
+        self.assertContains(response, "Mark collected")
+        self.assertContains(response, "Main campus")
+        self.assertEqual(
+            list(response.context["slots"].values_list("collected", flat=True)),
+            [False, False, True],
+        )
+
     def test_device_detail_shows_professional_lifecycle_record(self):
         self.device.owner = self.admin
         self.device.status = Device.Status.REPAIR_PROCESSING
@@ -109,17 +148,52 @@ class WorkflowTests(TestCase):
         self.assertEqual(response.context["assessment_count"], 1)
         self.assertEqual(response.context["sanitization_count"], 1)
         self.assertEqual(response.context["repair_count"], 1)
-        self.assertContains(response, "My devices")
-        self.assertContains(response, "Devices added by this IT administrator.")
+        self.assertNotContains(response, "Devices added by this IT administrator.")
+        self.assertNotContains(response, "id=\"my-devices\"")
+        self.assertContains(response, "Processing workflow")
+        self.assertContains(response, "IT assessment")
+        self.assertContains(response, "Sanitization")
+        self.assertContains(response, "Repair")
+        self.assertContains(response, "Processed devices")
+        self.assertContains(response, "Pending IT admin approvals")
         self.assertContains(response, "Campus laptop")
 
-    def test_devices_page_has_add_device_button_for_admin(self):
+    def test_admin_cannot_register_devices_or_see_registration_links(self):
         self.client.force_login(self.admin)
-        response = self.client.get(reverse("devices"))
+        device_count = Device.objects.count()
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "＋ Add device")
-        self.assertContains(response, reverse("register_device"))
+        for response in (
+            self.client.get(reverse("register_device")),
+            self.client.post(reverse("register_device")),
+        ):
+            self.assertEqual(response.status_code, 403)
+        self.assertEqual(Device.objects.count(), device_count)
+
+        for name in ("devices", "profile"):
+            with self.subTest(page=name):
+                response = self.client.get(reverse(name))
+                self.assertEqual(response.status_code, 200)
+                self.assertNotContains(response, reverse("register_device"))
+
+    def test_device_manager_can_register_device(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse("register_device"), {
+            "device_name": "Work laptop",
+            "make": "Dell",
+            "model_name": "Latitude",
+            "serial_number": "MANAGER-REGISTERED-SERIAL",
+            "processor": "Intel",
+            "ram_gb": 8,
+            "storage_info": "256GB SSD",
+            "initial_value_kes": "50000.00",
+            "acquisition_month": "03",
+            "acquisition_year": "2024",
+        })
+
+        self.assertRedirects(response, reverse("my_devices"))
+        registered_device = Device.objects.get(serial_number="MANAGER-REGISTERED-SERIAL")
+        self.assertEqual(registered_device.owner, self.manager)
+        self.assertEqual(registered_device.status, Device.Status.REGISTERED)
 
     def test_device_detail_updates_selected_sanitization_pathway_status(self):
         self.device.owner = self.admin

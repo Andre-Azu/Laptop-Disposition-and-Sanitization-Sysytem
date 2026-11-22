@@ -2,43 +2,70 @@
 {% load laptops_extras %}
 {% block title %}Profile | Strathmore Laptop Recovery{% endblock %}
 {% block content %}
-<div class="mb-6"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Account / Profile</p><h1 class="mt-2 text-3xl font-extrabold">Your profile</h1><p class="mt-1 text-sm text-slate-500">Contact information and activity summary.</p></div>
+<div class="mb-7 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
+  <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Account / Profile</p>
+  <h1 class="mt-2 text-3xl font-extrabold text-navy">Your profile</h1>
+  <p class="mt-1 text-sm text-slate-600">{% if user.is_it_admin %}Track completed device processing and manage your account.{% else %}Contact information and a summary of your registered devices.{% endif %}</p>
+</div>
 {% if user.is_it_admin %}
-<div class="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-  <button type="button" onclick="setFilter('ASSESSMENTS')" data-card="ASSESSMENTS" class="metric-card panel border-t-2 border-t-brand p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md">
-    <p class="text-[11px] font-bold uppercase text-slate-500">Completed IT assessments</p>
-    <p class="mt-2 text-3xl font-extrabold">{{ assessment_count }}</p>
-  </button>
-  <button type="button" onclick="setFilter('SANITIZATIONS')" data-card="SANITIZATIONS" class="metric-card panel border-t-2 border-t-forest p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md">
-    <p class="text-[11px] font-bold uppercase text-slate-500">Completed sanitizations</p>
-    <p class="mt-2 text-3xl font-extrabold">{{ sanitization_count }}</p>
-  </button>
-  <button type="button" onclick="setFilter('REPAIRS')" data-card="REPAIRS" class="metric-card panel border-t-2 border-t-gold p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md">
-    <p class="text-[11px] font-bold uppercase text-slate-500">Executed repairs</p>
-    <p class="mt-2 text-3xl font-extrabold">{{ repair_count }}</p>
-  </button>
-  <a href="#pending-it-admins" class="panel border-t-2 border-t-slate-400 p-5 transition hover:-translate-y-0.5 hover:shadow-md">
-    <p class="text-[11px] font-bold uppercase text-slate-500">Pending IT admin approvals</p>
-    <p class="mt-2 text-3xl font-extrabold">{{ pending_admins|length }}</p>
-  </a>
-</div><section id="pending-it-admins" class="panel mb-6 overflow-hidden"><div class="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 class="font-bold">Pending IT admin approvals</h2><p class="text-xs text-slate-500">Approve or reject requests from new IT staff.</p></div><span class="badge bg-amber-100 text-amber">{{ pending_admins|length }} pending</span></div><div class="divide-y divide-slate-100">{% for applicant in pending_admins %}<div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4"><div><p class="font-bold">{{ applicant.get_full_name|default:applicant.username }}</p><p class="text-xs text-slate-500">{{ applicant.email }} · Requested {{ applicant.date_joined|date:'d M Y' }}</p></div><div class="flex gap-2"><form method="post" action="{% url 'admin_access_decision' applicant.pk 'approve' %}">{% csrf_token %}<button class="btn bg-forest text-white">Approve</button></form><form method="post" action="{% url 'admin_access_decision' applicant.pk 'reject' %}">{% csrf_token %}<button class="btn btn-light">Reject</button></form></div></div>{% empty %}<p class="px-5 py-7 text-sm text-slate-500">No pending requests.</p>{% endfor %}</div></section>
-<section id="my-devices" class="panel mb-6 overflow-hidden">
-  <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
-    <div><h2 class="font-bold">My devices</h2><p class="text-xs text-slate-500">Devices added by this IT administrator.</p></div>
-    <a href="{% url 'register_device' %}" class="btn btn-primary">＋ Add device</a>
+<section class="mb-7">
+  <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+    <div><p class="text-xs font-bold uppercase tracking-[.14em] text-slate-500">Processing workflow</p><h2 class="mt-1 text-xl font-extrabold text-navy">Your completed work</h2></div>
+    <p class="text-xs text-slate-500">Select a stage to view the devices you processed.</p>
   </div>
-  <div class="divide-y divide-slate-100">
-    {% for device in my_devices %}
-    <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-      <div><p class="font-bold">{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</p><p class="mt-1 text-xs text-slate-500">{{ device.serial_number }} · Added {{ device.created_at|date:'d M Y' }}</p></div>
-      <div class="flex items-center gap-2"><span class="badge bg-slate-100 text-slate-600">{{ device.get_status_display }}</span><a href="{% url 'device_detail' device.pk %}" class="btn btn-light py-1.5 text-xs">More info</a></div>
-    </div>
-    {% empty %}
-    <p class="px-5 py-7 text-sm text-slate-500">No devices added by you yet.</p>
-    {% endfor %}
+  <div class="grid gap-4 md:grid-cols-3">
+  <button type="button" onclick="setFilter('ASSESSMENTS')" aria-pressed="{% if profile_filter == 'ASSESSMENTS' %}true{% else %}false{% endif %}" data-card="ASSESSMENTS" class="metric-card panel border-t-4 border-t-brand p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md {% if profile_filter == 'ASSESSMENTS' %}ring-2 ring-brand/30{% endif %}">
+    <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs font-extrabold text-blue-800">01</span>
+    <p class="mt-4 text-xs font-bold uppercase tracking-wide text-slate-600">IT assessment</p>
+    <p class="mt-1 text-sm text-slate-500">Verify device condition</p>
+    <p class="mt-4 text-3xl font-extrabold text-navy">{{ assessment_count }}</p>
+    <p class="mt-1 text-xs font-semibold text-slate-500">completed</p>
+  </button>
+  <button type="button" onclick="setFilter('SANITIZATIONS')" aria-pressed="{% if profile_filter == 'SANITIZATIONS' %}true{% else %}false{% endif %}" data-card="SANITIZATIONS" class="metric-card panel border-t-4 border-t-forest p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md {% if profile_filter == 'SANITIZATIONS' %}ring-2 ring-forest/30{% endif %}">
+    <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-100 text-xs font-extrabold text-green-800">02</span>
+    <p class="mt-4 text-xs font-bold uppercase tracking-wide text-slate-600">Sanitization</p>
+    <p class="mt-1 text-sm text-slate-500">Secure and certify data</p>
+    <p class="mt-4 text-3xl font-extrabold text-navy">{{ sanitization_count }}</p>
+    <p class="mt-1 text-xs font-semibold text-slate-500">completed</p>
+  </button>
+  <button type="button" onclick="setFilter('REPAIRS')" aria-pressed="{% if profile_filter == 'REPAIRS' %}true{% else %}false{% endif %}" data-card="REPAIRS" class="metric-card panel border-t-4 border-t-gold p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md {% if profile_filter == 'REPAIRS' %}ring-2 ring-gold/30{% endif %}">
+    <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-amber-100 text-xs font-extrabold text-amber-800">03</span>
+    <p class="mt-4 text-xs font-bold uppercase tracking-wide text-slate-600">Repair</p>
+    <p class="mt-1 text-sm text-slate-500">Restore flagged components</p>
+    <p class="mt-4 text-3xl font-extrabold text-navy">{{ repair_count }}</p>
+    <p class="mt-1 text-xs font-semibold text-slate-500">completed</p>
+  </button>
+  </div>
+  <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+    <p class="text-sm font-semibold text-slate-700">Administrator access requests <span class="ml-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900">{{ pending_admins|length }} pending</span></p>
+    <a href="#pending-it-admins" class="text-sm font-bold text-brand hover:underline">Review requests ↓</a>
   </div>
 </section>
-<div class="grid gap-6 xl:grid-cols-[.8fr_1.2fr]"><section class="panel p-5"><h2 class="font-bold">Contact details</h2><form method="post" class="mt-4 space-y-3">{% csrf_token %}<input type="hidden" name="action" value="profile">{% for field in form %}<label class="block text-xs font-bold">{{ field.label }}{{ field }}</label>{% endfor %}<button class="btn btn-primary">Save profile</button></form></section><section class="panel overflow-hidden"><div class="border-b border-slate-200 px-5 py-4"><h2 class="font-bold">Processed laptops</h2><p id="processed-filter-label" class="mt-1 text-xs font-bold uppercase text-slate-500">{{ profile_filter }}</p></div><div class="divide-y divide-slate-100">
+<section id="pending-it-admins" class="panel mb-7 overflow-hidden">
+  <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
+    <div><h2 class="font-bold text-navy">Pending IT admin approvals</h2><p class="mt-1 text-xs text-slate-600">Approve or reject requests from new IT staff.</p></div>
+    <span class="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-900">{{ pending_admins|length }} pending</span>
+  </div>
+  <div class="divide-y divide-slate-100">
+    {% for applicant in pending_admins %}
+    <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <div><p class="font-bold text-navy">{{ applicant.get_full_name|default:applicant.username }}</p><p class="mt-1 text-xs text-slate-600">{{ applicant.email }} · Requested {{ applicant.date_joined|date:'d M Y' }}</p></div>
+      <div class="flex gap-2">
+        <form method="post" action="{% url 'admin_access_decision' applicant.pk 'approve' %}">{% csrf_token %}<button class="btn bg-forest text-white">Approve</button></form>
+        <form method="post" action="{% url 'admin_access_decision' applicant.pk 'reject' %}">{% csrf_token %}<button class="btn btn-light">Reject</button></form>
+      </div>
+    </div>
+    {% empty %}<p class="px-5 py-6 text-sm text-slate-600">No pending access requests.</p>{% endfor %}
+  </div>
+</section>
+<div class="grid items-start gap-6 xl:grid-cols-[minmax(280px,.75fr)_minmax(0,1.5fr)]">
+  <section class="panel p-5">
+    <p class="text-xs font-bold uppercase tracking-wide text-brand">Account settings</p><h2 class="mt-1 text-lg font-bold text-navy">Contact details</h2>
+    <form method="post" class="mt-4 space-y-3">{% csrf_token %}<input type="hidden" name="action" value="profile">{% for field in form %}<label class="block text-xs font-bold">{{ field.label }}{{ field }}</label>{% endfor %}<button class="btn btn-primary w-full">Save profile</button></form>
+  </section>
+  <section class="panel overflow-hidden">
+    <div class="border-b border-slate-200 bg-slate-50 px-5 py-4"><p class="text-xs font-bold uppercase tracking-wide text-brand">Workflow history</p><h2 class="mt-1 font-bold text-navy">Processed devices</h2><p id="processed-filter-label" class="mt-1 text-xs text-slate-600">{% if profile_filter == "ASSESSMENTS" %}Completed IT assessments{% elif profile_filter == "SANITIZATIONS" %}Completed sanitizations{% else %}Finalized repairs{% endif %}</p></div>
+    <div class="divide-y divide-slate-100">
 <div data-processed-list="ASSESSMENTS"{% if profile_filter != "ASSESSMENTS" %} hidden{% endif %}>{% for device in assessment_devices %}<div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm"><div><strong>{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</strong><span class="ml-2 text-slate-500">{{ device.get_status_display }}</span></div><a href="{% url 'device_detail' device.pk %}" class="btn btn-light py-1.5 text-xs">More info</a></div>{% empty %}<p class="p-5 text-sm text-slate-500">No completed assessments.</p>{% endfor %}</div>
 <div data-processed-list="SANITIZATIONS"{% if profile_filter != "SANITIZATIONS" %} hidden{% endif %}>{% for device in sanitization_devices %}<div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm"><div><strong>{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</strong><span class="ml-2 text-slate-500">{{ device.get_status_display }}</span></div><a href="{% url 'device_detail' device.pk %}" class="btn btn-light py-1.5 text-xs">More info</a></div>{% empty %}<p class="p-5 text-sm text-slate-500">No completed sanitizations.</p>{% endfor %}</div>
 <div data-processed-list="REPAIRS"{% if profile_filter != "REPAIRS" %} hidden{% endif %}>{% for device in repair_devices %}<div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm"><div><strong>{{ device.device_name }} · {{ device.make }} {{ device.model_name }}</strong><span class="ml-2 text-slate-500">{{ device.get_status_display }}</span></div><a href="{% url 'device_detail' device.pk %}" class="btn btn-light py-1.5 text-xs">More info</a></div>{% empty %}<p class="p-5 text-sm text-slate-500">No finalized repairs.</p>{% endfor %}</div>
@@ -50,10 +77,15 @@ function setFilter(filter) {
   });
   document.querySelectorAll('[data-card]').forEach(function (card) {
     card.classList.toggle('ring-2', card.dataset.card === filter);
-    card.classList.toggle('ring-brand', card.dataset.card === filter);
+    card.classList.toggle('ring-brand/30', card.dataset.card === filter);
+    card.setAttribute('aria-pressed', card.dataset.card === filter ? 'true' : 'false');
   });
   var label = document.getElementById('processed-filter-label');
-  if (label) label.textContent = filter;
+  if (label) label.textContent = {
+    ASSESSMENTS: 'Completed IT assessments',
+    SANITIZATIONS: 'Completed sanitizations',
+    REPAIRS: 'Finalized repairs'
+  }[filter] || filter;
 }
 </script>
 {% else %}

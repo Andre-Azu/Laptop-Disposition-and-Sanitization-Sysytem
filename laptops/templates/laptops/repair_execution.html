@@ -1,70 +1,78 @@
 {% extends 'laptops/base.html' %}
 {% block title %}Active Repair Workstation{% endblock %}
 {% block content %}
-<div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+<div class="mx-auto max-w-5xl">
+<div class="mb-6 flex flex-wrap items-end justify-between gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
   <div>
-    <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Repair work / Active workstation</p>
-    <h1 class="mt-2 text-3xl font-extrabold">{{ device.device_name }}</h1>
-    <p class="mt-1 text-sm text-slate-500">{{ device.make }} {{ device.model_name }} · {{ device.owner.get_full_name|default:device.owner.username }}</p>
+    <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Operations / Repair workstation</p>
+    <h1 class="mt-2 text-2xl font-extrabold text-navy sm:text-3xl">{{ device.device_name }}</h1>
+    <p class="mt-1 text-sm text-slate-600">{{ device.make }} {{ device.model_name }} · {{ device.owner.get_full_name|default:device.owner.username }}</p>
+    <p class="mt-2 text-xs text-slate-500">{{ device.processor }} · {{ device.ram_gb }} GB RAM · {{ device.storage_info }}</p>
   </div>
   <a href="{% url 'repairs' %}" class="btn btn-light">← Back to queue</a>
 </div>
 <form method="post" id="repairExecutionForm" class="space-y-4">
   {% csrf_token %}
-  <section class="panel p-5" id="repairProgressSection" data-total="{{ repair_total_count }}" data-completed="{{ repair_completed_count }}">
+  <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" id="repairProgressSection" data-total="{{ repair_total_count }}" data-completed="{{ repair_completed_count }}">
     <div class="flex items-center justify-between gap-3 text-sm">
       <div>
-        <p class="text-xs font-bold uppercase tracking-[.16em] text-brand">Repair progress</p>
+        <p class="text-xs font-bold uppercase tracking-[.14em] text-slate-600">Repair progress</p>
         <p id="repairProgressText" class="mt-1 font-bold text-navy">{{ repair_completed_count }} of {{ repair_total_count }} components completed</p>
       </div>
-      <span id="repairProgressPercent" class="badge bg-blue-100 text-blue-700">{% widthratio repair_completed_count repair_total_count 100 %}%</span>
+      <span id="repairProgressPercent" class="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-bold text-blue-900">{% widthratio repair_completed_count repair_total_count 100 %}%</span>
     </div>
-    <div class="mt-3 h-3 overflow-hidden rounded-full bg-slate-100">
+    <div class="mt-4 h-2.5 overflow-hidden rounded-full bg-slate-200">
       <div id="repairProgressBar" class="h-full rounded-full bg-brand transition-all duration-300" style="width: {% widthratio repair_completed_count repair_total_count 100 %}%"></div>
     </div>
   </section>
-  <section class="panel p-5" aria-labelledby="repair-outcomes-heading">
-    <h2 id="repair-outcomes-heading" class="text-xs font-bold uppercase tracking-[.16em] text-brand">Recorded component outcomes</h2>
+  <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="repair-outcomes-heading">
+    <div class="mb-4">
+      <p class="text-xs font-bold uppercase tracking-[.14em] text-slate-500">Outcome summary</p>
+      <h2 id="repair-outcomes-heading" class="mt-1 text-lg font-extrabold text-navy">Recorded component outcomes</h2>
+    </div>
     <div class="mt-4 grid gap-4 sm:grid-cols-2">
-      <div class="rounded-lg border border-green-200 bg-green-50 p-4">
-        <h3 class="text-sm font-bold text-forest">Fixed / Repaired (<span data-outcome-count="FIXED">{{ fixed_components|length }}</span>)</h3>
-        <div class="mt-2 flex flex-wrap gap-2" data-outcome-list="FIXED">
-          {% for name in fixed_components %}<span class="badge bg-green-100 text-forest" data-component-name="{{ name }}">{{ name }}</span>{% endfor %}
+      <div class="rounded-lg border border-green-300 bg-green-50 p-4">
+        <h3 class="flex items-center justify-between gap-2 text-sm font-bold text-green-950"><span>Fixed / Repaired</span><span class="rounded-full bg-green-200 px-2.5 py-1 text-xs text-green-950" data-outcome-count="FIXED">{{ fixed_components|length }}</span></h3>
+        <div class="mt-3 flex flex-wrap gap-2" data-outcome-list="FIXED">
+          {% for name in fixed_components %}<span class="rounded-md border border-green-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-green-950" data-component-name="{{ name }}">{{ name }}</span>{% endfor %}
         </div>
-        <p class="mt-2 text-xs text-slate-500" data-outcome-empty="FIXED"{% if fixed_components %} hidden{% endif %}>No components recorded yet.</p>
+        <p class="mt-3 text-xs text-green-900" data-outcome-empty="FIXED"{% if fixed_components %} hidden{% endif %}>No repaired components recorded yet.</p>
       </div>
-      <div class="rounded-lg border border-red-200 bg-red-50 p-4">
-        <h3 class="text-sm font-bold text-danger">Not fixed / Not repaired (<span data-outcome-count="NOT_FIXED">{{ not_fixed_components|length }}</span>)</h3>
-        <div class="mt-2 flex flex-wrap gap-2" data-outcome-list="NOT_FIXED">
-          {% for name in not_fixed_components %}<span class="badge bg-red-100 text-danger" data-component-name="{{ name }}">{{ name }}</span>{% endfor %}
+      <div class="rounded-lg border border-red-300 bg-red-50 p-4">
+        <h3 class="flex items-center justify-between gap-2 text-sm font-bold text-red-950"><span>Not repaired</span><span class="rounded-full bg-red-200 px-2.5 py-1 text-xs text-red-950" data-outcome-count="NOT_FIXED">{{ not_fixed_components|length }}</span></h3>
+        <div class="mt-3 flex flex-wrap gap-2" data-outcome-list="NOT_FIXED">
+          {% for name in not_fixed_components %}<span class="rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-950" data-component-name="{{ name }}">{{ name }}</span>{% endfor %}
         </div>
-        <p class="mt-2 text-xs text-slate-500" data-outcome-empty="NOT_FIXED"{% if not not_fixed_components %} hidden{% endif %}>No components recorded yet.</p>
+        <p class="mt-3 text-xs text-red-900" data-outcome-empty="NOT_FIXED"{% if not not_fixed_components %} hidden{% endif %}>No unrepaired components recorded yet.</p>
       </div>
     </div>
   </section>
   {% for component in flagged_components %}
   {% with key=component.name|lower %}
-  <article class="repair-component panel transition-all duration-200{% if component.name in missing_components %} border-rose-500 ring-4 ring-rose-500/20{% endif %}" data-component-card data-component-name="{{ component.name }}">
-    <div class="border-b border-slate-100 px-5 py-4">
-      <h2 class="text-lg font-extrabold">{{ component.name }}</h2>
-      <div class="mt-2 flex flex-wrap gap-2 text-xs">
-        {% if component.owner_status %}<span class="badge bg-blue-100 text-blue-700">OWNER · {{ component.owner_status|upper }}</span>{% endif %}
-        {% if component.diagnostic_status %}<span class="badge bg-amber-100 text-amber-700">IT · {{ component.diagnostic_status|upper }}</span>{% endif %}
+  <article class="repair-component overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-200{% if component.name in missing_components %} border-rose-500 ring-4 ring-rose-500/20{% endif %}" data-component-card data-component-name="{{ component.name }}">
+    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
+      <div>
+        <p class="text-[11px] font-bold uppercase tracking-[.14em] text-slate-500">Component needing repair</p>
+        <h2 class="mt-1 text-lg font-extrabold text-navy">{{ component.name }}</h2>
+      </div>
+      <div class="flex flex-wrap gap-2 text-xs">
+        {% if component.owner_status %}<span class="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 font-bold text-blue-900">Owner · {{ component.owner_status|upper }}</span>{% endif %}
+        {% if component.diagnostic_status %}<span class="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 font-bold text-amber-950">IT · {{ component.diagnostic_status|upper }}</span>{% endif %}
       </div>
     </div>
-    <fieldset class="px-5 py-5">
-      <legend class="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Repair outcome</legend>
+    <fieldset class="px-5 py-4">
+      <legend class="mb-3 text-xs font-bold uppercase tracking-wide text-slate-600">Select repair outcome</legend>
       <div class="grid gap-3 sm:grid-cols-2">
-        <label class="flex cursor-pointer items-center gap-3 rounded border border-slate-200 px-4 py-3 hover:border-brand">
+        <label class="flex cursor-pointer items-center gap-3 rounded-lg border border-green-300 bg-green-50/70 px-4 py-3 text-sm text-green-950 transition hover:border-green-500 hover:bg-green-100 has-[:checked]:border-green-600 has-[:checked]:bg-green-100 has-[:checked]:ring-2 has-[:checked]:ring-green-600/20">
           <input type="radio" name="component_{{ component.name|slugify|cut:'-' }}" value="FIXED" class="h-4 w-4 accent-blue-700" {% if component.posted_result == 'FIXED' %}checked{% endif %}>
-          <span class="font-semibold">Fixed / Restored</span>
+          <span><span class="block font-bold">Fixed / restored</span><span class="mt-0.5 block text-xs text-green-800">Component is working again</span></span>
         </label>
-        <label class="flex cursor-pointer items-center gap-3 rounded border border-slate-200 px-4 py-3 hover:border-brand">
+        <label class="flex cursor-pointer items-center gap-3 rounded-lg border border-red-300 bg-red-50/70 px-4 py-3 text-sm text-red-950 transition hover:border-red-500 hover:bg-red-100 has-[:checked]:border-red-600 has-[:checked]:bg-red-100 has-[:checked]:ring-2 has-[:checked]:ring-red-600/20">
           <input type="radio" name="component_{{ component.name|slugify|cut:'-' }}" value="NOT_FIXED" class="h-4 w-4 accent-blue-700" {% if component.posted_result == 'NOT_FIXED' %}checked{% endif %}>
-          <span class="font-semibold">Not Repairable</span>
+          <span><span class="block font-bold">Not repaired</span><span class="mt-0.5 block text-xs text-red-800">Still faulty or parts unavailable</span></span>
         </label>
       </div>
-      <p class="missing-message mt-3{% if not component.name in missing_components %} hidden{% endif %} text-sm font-bold text-red-700">Select one repair outcome for this component.</p>
+      <p class="missing-message mt-3{% if not component.name in missing_components %} hidden{% endif %} rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-800">Select one repair outcome for this component.</p>
     </fieldset>
   </article>
   {% endwith %}
@@ -75,18 +83,20 @@
   </div>
   {% endfor %}
 
-  <section class="panel p-5">
-    <label for="technician_notes" class="block text-xs font-bold uppercase tracking-wide text-slate-500">Technician Service Comments (Optional)</label>
-    <textarea id="technician_notes" name="technician_notes" rows="4" class="mt-2" placeholder="Add optional service notes, work performed, or parts replaced.">{{ comments }}</textarea>
+  <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <label for="technician_notes" class="block text-sm font-bold text-navy">Technician service comments <span class="font-normal text-slate-500">(optional)</span></label>
+    <p class="mt-1 text-xs text-slate-600">Note any work performed, parts replaced, or reason an issue remains unresolved.</p>
+    <textarea id="technician_notes" name="technician_notes" rows="3" class="mt-3" placeholder="Add service notes...">{{ comments }}</textarea>
   </section>
-  <div class="flex justify-end">
+  <div class="sticky bottom-3 z-10 flex justify-end rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
     {% if repair_already_finalized %}
-    <p class="self-center text-sm font-bold text-forest">Repair outcomes finalized.</p>
+    <p class="self-center rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm font-bold text-green-900">Repair outcomes finalized.</p>
     {% else %}
-    <button type="submit" class="btn btn-primary">FINALIZE &amp; SAVE REPAIR</button>
+    <button type="submit" class="btn btn-primary px-5 py-3">Finalize and save repair</button>
     {% endif %}
   </div>
 </form>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -118,7 +128,9 @@
       });
       names.forEach(function (name) {
         const item = document.createElement('span');
-        item.className = result === 'FIXED' ? 'badge bg-green-100 text-forest' : 'badge bg-red-100 text-danger';
+        item.className = result === 'FIXED'
+          ? 'rounded-md border border-green-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-green-950'
+          : 'rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-950';
         item.dataset.componentName = name;
         item.textContent = name;
         list.appendChild(item);

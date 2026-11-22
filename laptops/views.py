@@ -339,6 +339,9 @@ def device_inventory(request):
 
 @login_required
 def register_device(request):
+    if request.user.is_it_admin():
+        raise PermissionDenied("Device Manager access is required to register a device.")
+
     current_year = timezone.localdate().year
     form = DeviceRegistrationForm(request.POST or None, owner=request.user)
     if request.method == "POST" and form.is_valid():
@@ -354,12 +357,9 @@ def register_device(request):
         device.save()
         record_audit(device, request.user, "Device registered", f"{device.device_name} added to the recovery system.")
         messages.success(request, "Device registered successfully.")
-        if request.user.is_it_admin():
-            return redirect("devices")
         return redirect("my_devices")
     return render(request, "laptops/device_register.html", {
         "form": form,
-        "is_admin": request.user.is_it_admin(),
         "model_series": dict(Device.MODEL_SERIES),
         "year_range": range(current_year, current_year - 15, -1),
         "current_year": current_year,
@@ -1575,7 +1575,7 @@ def disposition(request):
             else:
                 entry.overall_health_rating = "Poor"
                 entry.overall_health_class = "red"
-        slots = CollectionSlot.objects.select_related("device", "requested_by").order_by("-created_at", "-pk")
+        slots = CollectionSlot.objects.select_related("device", "requested_by").order_by("collected", "-created_at", "-pk")
         disposition_queue = Device.objects.filter(status=Device.Status.DISPOSITION_PENDING).select_related("owner").order_by("-updated_at", "-pk")
         if query:
             slots = slots.filter(
@@ -1694,11 +1694,6 @@ def profile(request):
             audit_logs__actor=request.user,
             audit_logs__action_stage="Repair execution finalized",
         ).distinct().select_related("owner").order_by("-created_at", "-pk")
-        my_devices = _searched_devices(
-            Device.objects.filter(owner=request.user).select_related("owner").order_by("-created_at", "-pk"),
-            request.GET.get("q", "").strip(),
-        )
-
         assessment_count = assessments.count()
         sanitization_count = certificates.count()
         repair_count = repair_devices.count()
@@ -1721,7 +1716,6 @@ def profile(request):
         context = {
             "form": form,
             "is_admin": True,
-            "my_devices": my_devices,
             "pending_admins": pending_admins,
             "assessment_count": assessment_count,
             "completed_assessment_count": assessment_count,
